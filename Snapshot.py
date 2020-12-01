@@ -23,6 +23,10 @@ class Snapshot:
 		self.kind = Kind(int.from_bytes(self.stream.read(Constants.kKindSize), 'little'))
 		self.hash = self.stream.read(Constants.hashSize).decode('UTF-8')
 		self.features = list(map(lambda x: x.decode('UTF-8'), StreamUtils.readString(self.stream).split(b'\x20')))
+		
+		# Set up deterministic information
+		self.isPrecompiled = self.kind == Kind.FULL_AOT and 'product' in self.features
+		self.isDebug = 'debug' in self.features
 
 		# Cluster information
 		self.numBaseObjects = StreamUtils.readUnsigned(self.stream)
@@ -31,13 +35,17 @@ class Snapshot:
 		self.fieldTableLength = StreamUtils.readUnsigned(self.stream)
 
 		# Initialize references
-		self.nextRefIndex = 0
 		self.references = ['INVALID'] # Reference count starts at 1
+		self.nextRefIndex = 1
 		self.addBaseObjects()
 		for _ in range(len(self.references), self.numBaseObjects):
 			self.assignRef('UNKNOWN') # Allocate missing references
 
+		assert(len(self.references) == self.numBaseObjects)
+
 		self.clusters = [ self.readClusterAlloc() for _ in range(self.numClusters) ]
+
+		assert(len(self.references) == self.numObjects)
 
 		for cluster in self.clusters:
 			cluster.readFill(self)
@@ -89,9 +97,6 @@ class Snapshot:
 		deserializer = Cluster.getDeserializerForCid(StreamUtils.readCid(self.stream))
 		deserializer.readAlloc(self)
 		return deserializer
-
-	def readRef(self, n):
-		return self.refs[n]
 
 	# Getter of the snapshot's header
 	def getMagic(self):

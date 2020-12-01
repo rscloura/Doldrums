@@ -1,5 +1,7 @@
 import math
 
+import Constants
+
 class NumericUtils: 
 	def isPowerOfTwo(n):
 		return ((n & (n - 1)) == 0) and (n != 0)
@@ -20,6 +22,7 @@ class StreamUtils:
 	kEndByteMarker = (255 - kMaxDataPerByte)
 	kEndUnsignedByteMarker = (255 - kMaxUnsignedDataPerByte)
 
+	#FIXME: find a not so hacky way of reading only one byte
 	def read(stream, endByteMarker, maxLoops = -1):
 		b = int.from_bytes(stream.read(1), 'big', signed=False)
 		r = 0
@@ -35,20 +38,24 @@ class StreamUtils:
 			b = int.from_bytes(x, 'big', signed=False)
 			maxLoops -= 1
 
-		assert(flag * maxLoops >= 0)
 		return r | ((b - endByteMarker) << s)
- 
-	def readUnsigned(stream, size = -1):
-		if (size == -1):
-			return StreamUtils.read(stream, StreamUtils.kEndUnsignedByteMarker)
-		else:
-			return StreamUtils.read(stream, StreamUtils.kEndUnsignedByteMarker, math.ceil(size / 7))
+
+	# 7 data bits per byte because of marker
+	def readUnsigned(stream, size = -7):
+		if size == 8:
+			return int.from_bytes(stream.read(1), 'big', signed=False) # No marker
+		return StreamUtils.read(stream, StreamUtils.kEndUnsignedByteMarker, math.ceil(size / 7))
 
 	def readInt(stream, size = 32):
-		return StreamUtils.read(stream, StreamUtils.kEndByteMarker, math.ceil(size / 7)) # 7 bits per "byte" because of marker
+		if size == 8:
+			return int.from_bytes(stream.read(1), 'big', signed=True) # No marker
+		return StreamUtils.read(stream, StreamUtils.kEndByteMarker, math.ceil(size / 7))
 
 	def readCid(stream):
 		return StreamUtils.readInt(stream, 32)
+
+	def readRef(stream):
+		return StreamUtils.readUnsigned(stream)
 
 	def readTokenPosition(stream):
 		return StreamUtils.readInt(stream, 32)
@@ -69,6 +76,19 @@ class StreamUtils:
 			res += b
 			b = stream.read(1)
 		return res
+
+class DecodeUtils:
+	def decodeStaticBit(value):
+		r = (value >> 1) & 1
+		if r == 0:
+			return False
+		elif r == 1:
+			return True
+		else:
+			raise Exception('Encountered non-boolean expression')
+
+def isTopLevelCid(cid):
+	return cid >= Constants.kTopLevelCidOffset
 
 def getVersionInfo(hsh):
 	if hsh == '8ee4ef7a67df9845fba331734198a953':

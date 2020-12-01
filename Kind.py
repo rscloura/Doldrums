@@ -12,16 +12,14 @@ class Kind(Enum):
 		if(self.value == 0):
 			name = "Full (full snapshot of an application)"
 		elif(self.value == 1):
-			name = "Full core (full snapshot of core libraries, agnostic to null safety)"
-		elif(self.value == 2):
 			name = "Full JIT (full + JIT code)"
-		elif(self.value == 3):
+		elif(self.value == 2):
 			name = "Full AOT (full + AOT code)"
-		elif(self.value == 4):
+		elif(self.value == 3):
 			name = "Message (a partial snapshot used only for isolate messaging)"
-		elif(self.value == 5):
+		elif(self.value == 4):
 			name = "None (gen_snapshot)"
-		elif(self.value == 6):
+		elif(self.value == 5):
 			name = "Invalid"
 		else:
 			name = "Unknown"

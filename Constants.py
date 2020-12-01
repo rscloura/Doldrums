@@ -16,3 +16,5 @@ kTypedDataCidRemainderInternal = 0
 kCachedDescriptorCount = 32
 kCachedICDataArrayCount = 4
 kNumStubEntries = 97
+
+kTopLevelCidOffset = 65536
