@@ -25,8 +25,19 @@ class Snapshot:
 		self.features = list(map(lambda x: x.decode('UTF-8'), StreamUtils.readString(self.stream).split(b'\x20')))
 		
 		# Set up deterministic information
+		self.isProduct = 'product' in self.features
+		self.hasComments = False #FIXME
 		self.isPrecompiled = self.kind == Kind.FULL_AOT and 'product' in self.features
 		self.isDebug = 'debug' in self.features
+		self.useBareInstructions = 'use_bare_instructions' in self.features
+		self.instructionsImage = 0 #FIXME
+		self.previousTextOffset = 0
+		if 'x64-sysv' in self.features:
+			self.arch = 'X64'
+			Constants.kMonomorphicEntryOffsetAOT = 8
+			Constants.kPolymorphicEntryOffsetAOT = 22
+		else:
+			raise Exception('Unknown architecture')
 
 		# Cluster information
 		self.numBaseObjects = StreamUtils.readUnsigned(self.stream)

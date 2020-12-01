@@ -18,3 +18,6 @@ kCachedICDataArrayCount = 4
 kNumStubEntries = 97
 
 kTopLevelCidOffset = 65536
+
+kMonomorphicEntryOffsetAOT = 0
+kPolymorphicEntryOffsetAOT = 0

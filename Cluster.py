@@ -375,6 +375,79 @@ def getDeserializerForCid(cid):
 				snapshot.assignRef('code')
 			self.deferredStopIndex = snapshot.nextRefIndex
 
+		def readFill(self, snapshot):
+			for refId in range(self.startIndex, self.stopIndex):
+				codePtr = self._readFill(snapshot, refId, False)
+				snapshot.references[refId] = codePtr
+			for refId in range(self.deferredStartIndex, self.deferredStopIndex):
+				cdPtr = self._readFill(snapshot, refId, True)
+				snapshot.references[refId] = codePtr
+
+		def _readFill(self, snapshot, refId, deferred):
+			codePtr = { }
+			self._readInstructions(snapshot, codePtr, deferred)
+
+			if not (snapshot.kind is Kind.FULL_AOT and snapshot.useBareInstructions):
+				codePtr['objectPool'] = StreamUtils.readRef(snapshot.stream)
+			else:
+				codePtr['objectPool'] = None
+			codePtr['owner'] = StreamUtils.readRef(snapshot.stream)
+			codePtr['exceptionHandlers'] = StreamUtils.readRef(snapshot.stream)
+			codePtr['pcDescriptors'] = StreamUtils.readRef(snapshot.stream)
+			codePtr['catchEntry'] = StreamUtils.readRef(snapshot.stream)
+			codePtr['compressedStackMaps'] = StreamUtils.readRef(snapshot.stream)
+			codePtr['inlinedIdToFunction'] = StreamUtils.readRef(snapshot.stream)
+			codePtr['codeSourceMap'] = StreamUtils.readRef(snapshot.stream)
+
+			if (not snapshot.isPrecompiled) and (snapshot.kind is Kind.FULL_JIT):
+				codePtr['deoptInfoArray'] = StreamUtils.readRef(snapshot.stream)
+				codePtr['staticCallsTargetTable'] = StreamUtils.readRef(snapshot.stream)
+
+			if not snapshot.isProduct:
+				codePtr['returnAddressMetadata'] = StreamUtils.readRef(snapshot.stream)
+				codePtr['varDescriptors'] = None
+				codePtr['comments'] = StreamUtils.readRef(snapshot.stream) if snapshot.hasComments else []
+				codePtr['compileTimestamp'] = 0
+
+			codePtr['stateBits'] = StreamUtils.readInt(snapshot.stream, 32)
+
+			return codePtr
+
+		def _readInstructions(self, snapshot, codePtr, deferred):
+			if deferred:
+				if snapshot.isPrecompiled and snapshot.useBareInstructions:
+					codePtr['entryPoint'] = 'entryPoint'
+					codePtr['uncheckedEntryPoint'] = 'entryPoint'
+					codePtr['monomorphicEntryPoint'] = 'entryPoint'
+					codePtr['monomorphicUncheckedEntryPoint'] = 'entryPoint'
+					codePtr['instructionsLength'] = 0
+					return
+				codePtr['uncheckedOffset'] = 0
+				#TODO: cahed entry points
+				return
+
+			if snapshot.isPrecompiled and snapshot.useBareInstructions:
+				snapshot.previousTextOffset += StreamUtils.readUnsigned(snapshot.stream)
+				payloadStart = snapshot.instructionsImage + snapshot.previousTextOffset
+				payloadInfo = StreamUtils.readUnsigned(snapshot.stream)
+				uncheckedOffset = payloadInfo >> 1
+				hasMonomorphicEntrypoint = (payloadInfo & 1) == 1
+
+				entryOffset = Constants.kPolymorphicEntryOffsetAOT if hasMonomorphicEntrypoint else 0
+				monomorphicEntryOffset = Constants.kMonomorphicEntryOffsetAOT if hasMonomorphicEntrypoint else 0
+				entryPoint = payloadStart + entryOffset
+				monomorphicEntryPoint = payloadStart + monomorphicEntryOffset
+
+				codePtr['entryPoint'] = entryPoint
+				codePtr['uncheckedEntryPoint'] = entryPoint + uncheckedOffset
+				codePtr['monomorphicEntryPoint'] = monomorphicEntryPoint
+				codePtr['monomorphicUncheckedEntryPoint'] = monomorphicEntryPoint + uncheckedOffset
+
+				return
+
+			#TODO
+
+
 	# Class ID: 20
 	class ObjectPoolDeserializer():
 		def readAlloc(self, snapshot):
