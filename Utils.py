@@ -27,10 +27,6 @@ class StreamUtils:
 		b = int.from_bytes(stream.read(1), 'big', signed=False)
 		r = 0
 		s = 0
-		if (maxLoops == -1):
-			flag = -1
-		else:
-			flag = 1
 		while (b <= StreamUtils.kMaxUnsignedDataPerByte):
 			r |= b << s
 			s += StreamUtils.kDataBitsPerByte
@@ -46,7 +42,7 @@ class StreamUtils:
 			return int.from_bytes(stream.read(1), 'big', signed=False) # No marker
 		return StreamUtils.read(stream, StreamUtils.kEndUnsignedByteMarker, math.ceil(size / 7))
 
-	def readInt(stream, size = 32):
+	def readInt(stream, size):
 		if size == 8:
 			return int.from_bytes(stream.read(1), 'big', signed=True) # No marker
 		return StreamUtils.read(stream, StreamUtils.kEndByteMarker, math.ceil(size / 7))
@@ -67,7 +63,7 @@ class StreamUtils:
 		elif b == b'\x01':
 			return True
 		else:
-			raise Exception('Expected boolean, but received non-boolean value while reading' + str(stream.tell()))
+			raise Exception('Expected boolean, but received non-boolean value while reading at stream offset: ' + str(stream.tell()))
 
 	def readString(stream):
 		res = b''
@@ -76,6 +72,13 @@ class StreamUtils:
 			res += b
 			b = stream.read(1)
 		return res
+
+	def readWordWith32BitReads(stream):
+		value = 0
+		for j in range(2):
+			partialValue = StreamUtils.readUnsigned(stream, 32)
+			value |= partialValue << (j * 32)
+		return value
 
 class DecodeUtils:
 	def decodeStaticBit(value):
@@ -86,6 +89,9 @@ class DecodeUtils:
 			return True
 		else:
 			raise Exception('Encountered non-boolean expression')
+
+	def decodeTypeBits(value):
+		return value & 0x7f
 
 def isTopLevelCid(cid):
 	return cid >= Constants.kTopLevelCidOffset

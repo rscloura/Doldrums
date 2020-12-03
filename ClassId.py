@@ -6,6 +6,13 @@ class ClassId(Enum):
 	def isTypedDataBaseClass(cid):
 		return ClassId.TYPED_DATA_INT8_ARRAY.value <= cid < ClassId.BYTE_DATA_VIEW.value
 
+	def isTypedDataViewClass(cid):
+		return cid == ClassId.BYTE_DATA_VIEW.value or (ClassId.isTypedDataBaseClass(cid) and \
+			((cid - ClassId.TYPED_DATA_INT8_ARRAY.value) % 3) == Constants.kTypedDataCidRemainderView)
+
+	def isExternalTypedDataClass(cid):
+		return ClassId.isTypedDataBaseClass(cid) and ((cid - ClassId.TYPED_DATA_INT8_ARRAY.value) % 3) == Constants.kTypedDataCidRemainderExternal
+
 	def isTypedDataClass(cid):
 		return ClassId.isTypedDataBaseClass(cid) and (cid - ClassId.TYPED_DATA_INT8_ARRAY.value) % 3 == Constants.kTypedDataCidRemainderInternal
 

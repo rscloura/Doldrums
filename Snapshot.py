@@ -30,12 +30,17 @@ class Snapshot:
 		self.isPrecompiled = self.kind == Kind.FULL_AOT and 'product' in self.features
 		self.isDebug = 'debug' in self.features
 		self.useBareInstructions = 'use_bare_instructions' in self.features
+		self.includesCode = self.kind == Kind.FULL_JIT or self.kind == Kind.FULL_AOT
 		self.instructionsImage = 0 #FIXME
 		self.previousTextOffset = 0
 		if 'x64-sysv' in self.features:
 			self.arch = 'X64'
 			Constants.kMonomorphicEntryOffsetAOT = 8
 			Constants.kPolymorphicEntryOffsetAOT = 22
+		elif 'arm64-sysv' in self.features:
+			self.arch = 'ARM64'
+			Constants.kMonomorphicEntryOffsetAOT = 8
+			Constants.kPolymorphicEntryOffsetAOT = 20
 		else:
 			raise Exception('Unknown architecture')
 
@@ -52,6 +57,8 @@ class Snapshot:
 		for _ in range(len(self.references), self.numBaseObjects):
 			self.assignRef('UNKNOWN') # Allocate missing references
 
+		self.unboxedFieldsMapAt = { }
+
 		assert(len(self.references) == self.numBaseObjects)
 
 		self.clusters = [ self.readClusterAlloc() for _ in range(self.numClusters) ]
@@ -60,7 +67,9 @@ class Snapshot:
 
 		for cluster in self.clusters:
 			cluster.readFill(self)
-		self.clusters[0]
+
+		self.readRoots()
+
 		self.dataImageOffset = NumericUtils.roundUp(self.length(), Constants.kMaxObjectAlignment)
 
 	def addBaseObjects(self):
@@ -100,12 +109,17 @@ class Snapshot:
 		for obj in baseObjects:
 			self.assignRef(obj)
 
+	def readRoots(self):
+		self.symbolTable = StreamUtils.readRef(self.stream)
+		print(self.symbolTable)
+		print(self.references[47809])
+
 	def assignRef(self, obj):
 		self.references.append(obj)
 		self.nextRefIndex += 1
 
 	def readClusterAlloc(self):
-		deserializer = Cluster.getDeserializerForCid(StreamUtils.readCid(self.stream))
+		deserializer = Cluster.getDeserializerForCid(self.includesCode, StreamUtils.readCid(self.stream))
 		deserializer.readAlloc(self)
 		return deserializer
 

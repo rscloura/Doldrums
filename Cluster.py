@@ -2,9 +2,11 @@ import Constants
 
 from ClassId import ClassId
 from Kind import Kind
-from Utils import DecodeUtils, StreamUtils, isTopLevelCid
+import TypedData
+from UnboxedFieldBitmap import UnboxedFieldBitmap
+from Utils import DecodeUtils, NumericUtils, StreamUtils, isTopLevelCid
 
-def getDeserializerForCid(cid):
+def getDeserializerForCid(includesCode, cid):
 	# Class ID: 4
 	class ClassDeserializer():
 		def readAlloc(self, snapshot):
@@ -75,7 +77,7 @@ def getDeserializerForCid(cid):
 				classPtr['stateBits'] = StreamUtils.readUnsigned(snapshot.stream, 32)
 
 				if snapshot.isPrecompiled and not isTopLevelCid(classId):
-					StreamUtils.readUnsigned(snapshot.stream, 64)
+					snapshot.unboxedFieldsMapAt[classId] = UnboxedFieldBitmap(StreamUtils.readUnsigned(snapshot.stream, 64))
 
 				snapshot.references[refId] = classPtr
 
@@ -455,8 +457,32 @@ def getDeserializerForCid(cid):
 			count = StreamUtils.readUnsigned(snapshot.stream)
 			for _ in range(count):
 				length = StreamUtils.readUnsigned(snapshot.stream)
-				snapshot.assignRef('library')
+				snapshot.assignRef('object pool')
 			self.stopIndex = snapshot.nextRefIndex
+
+		def readFill(self, snapshot):
+			for refId in range(self.startIndex, self.stopIndex):
+				poolPtr = { }
+				length = StreamUtils.readUnsigned(snapshot.stream)
+				poolPtr['length'] = length
+				poolPtr['entryBits'] = [ ]
+				poolPtr['data'] = [ ]
+				for j in range(length):
+					entryBits = StreamUtils.readUnsigned(snapshot.stream, 8)
+					poolPtr['entryBits'].append(entryBits)
+					entry = { }
+					decodedBits = DecodeUtils.decodeTypeBits(entryBits)
+					if decodedBits == Constants.kNativeEntryData or decodedBits == Constants.kTaggedObject:
+						entry['rawObj'] = StreamUtils.readRef(snapshot.stream)
+					elif decodedBits == Constants.kImmediate:
+						entry['rawValue'] = StreamUtils.readInt(snapshot.stream, 64)
+					elif decodedBits == Constants.kNativeFunction:
+						entry['rawValue'] = 'native call entry'
+					else:
+						raise Exception('No type associated to decoded type bits')
+					poolPtr['data'].append(entry)
+
+				snapshot.references[refId] = poolPtr
 
 	# Class ID: 21
 	class PcDescriptorsDeserializer():
@@ -465,8 +491,17 @@ def getDeserializerForCid(cid):
 			count = StreamUtils.readUnsigned(snapshot.stream)
 			for _ in range(count):
 				length = StreamUtils.readUnsigned(snapshot.stream)
-				snapshot.assignRef('library')
+				snapshot.assignRef('pc descriptors')
 			self.stopIndex = snapshot.nextRefIndex
+
+		def readFill(self, snapshot):
+			for refId in range(self.startIndex, self.stopIndex):
+				length = StreamUtils.readUnsigned(snapshot.stream)
+				descPtr = { }
+				descPtr['length'] = length
+				descPtr['data'] = snapshot.stream.read(length)
+
+				snapshot.references[refId] = descPtr
 
 	# Aggregate deserializer for class IDs: 22, 23, 81, 82
 	class RODataDeserializer():
@@ -490,6 +525,26 @@ def getDeserializerForCid(cid):
 				snapshot.assignRef('exception')
 			self.stopIndex = snapshot.nextRefIndex
 
+		def readFill(self, snapshot):
+			for refId in range(self.startIndex, self.stopIndex):
+				length = StreamUtils.readUnsigned(snapshot.stream)
+				handlersPtr = { }
+				handlersPtr['numEntries'] = length
+				handlersPtr['handledTypesData'] = StreamUtils.readRef(snapshot.stream)
+				data = []
+				for j in range(length):
+					info = { }
+					info['handlerPcOffset'] = StreamUtils.readUnsigned(snapshot.stream, 32)
+					info['outerTryIndex'] = StreamUtils.readInt(snapshot.stream, 16)
+					# Original code has read int8
+					info['needsStacktrace'] = StreamUtils.readBool(snapshot.stream)
+					info['hasCatchAll'] = StreamUtils.readBool(snapshot.stream)
+					info['isGenerated'] = StreamUtils.readBool(snapshot.stream)
+					data.append(info)
+				handlersPtr['data'] = data
+
+				snapshot.references[refId] = handlersPtr
+
 	# Class ID: 30
 	class UnlinkedCallDeserializer():
 		def readAlloc(self, snapshot):
@@ -498,6 +553,20 @@ def getDeserializerForCid(cid):
 			for _ in range(count):
 				snapshot.assignRef('unlinked call')
 			self.stopIndex = snapshot.nextRefIndex
+
+		def readFill(self, snapshot):
+			for refId in range(self.startIndex, self.stopIndex):
+				unlinkedPtr = self._readFromTo(snapshot)
+				unlinkedPtr['canPatchToMonomorphic'] = StreamUtils.readBool(snapshot.stream)
+
+				snapshot.references[refId] = unlinkedPtr
+
+		def _readFromTo(self, snapshot):
+			unlinkedPtr = { }
+			unlinkedPtr['targetName'] = StreamUtils.readUnsigned(snapshot.stream)
+			unlinkedPtr['argsDescriptor'] = StreamUtils.readUnsigned(snapshot.stream)
+
+			return unlinkedPtr
 
 	# Class ID: 34
 	class MegamorphicCacheDeserializer():
@@ -508,6 +577,22 @@ def getDeserializerForCid(cid):
 				snapshot.assignRef('megamorphic cache')
 			self.stopIndex = snapshot.nextRefIndex
 
+		def readFill(self, snapshot):
+			for refId in range(self.startIndex, self.stopIndex):
+				cachePtr = self._readFromTo(snapshot)
+				cachePtr['filledEntryCount'] = StreamUtils.readInt(snapshot.stream, 32)
+
+				snapshot.references[refId] = cachePtr
+
+		def _readFromTo(self, snapshot):
+			cachePtr = { }
+			cachePtr['targetName'] = StreamUtils.readUnsigned(snapshot.stream)
+			cachePtr['argsDescriptor'] = StreamUtils.readUnsigned(snapshot.stream)
+			cachePtr['buckets'] = StreamUtils.readUnsigned(snapshot.stream)
+			cachePtr['mask'] = StreamUtils.readUnsigned(snapshot.stream)
+
+			return cachePtr
+
 	# Class ID: 35
 	class SubtypeTestCacheDeserializer():
 		def readAlloc(self, snapshot):
@@ -516,6 +601,13 @@ def getDeserializerForCid(cid):
 			for _ in range(count):
 				snapshot.assignRef('subtype test cache')
 			self.stopIndex = snapshot.nextRefIndex
+
+		def readFill(self, snapshot):
+			for refId in range(self.startIndex, self.stopIndex):
+				cachePtr = { }
+				cachePtr['cache'] = StreamUtils.readRef(snapshot.stream)
+
+				snapshot.references[refId] = cachePtr
 
 	# Class ID: 35
 	class LoadingUnitDeserializer():
@@ -526,16 +618,52 @@ def getDeserializerForCid(cid):
 				snapshot.assignRef('loading unit')
 			self.stopIndex = snapshot.nextRefIndex
 
+		def readFill(self, snapshot):
+			for refId in range(self.startIndex, self.stopIndex):
+				unitPtr = { }
+				unitPtr['parent'] = StreamUtils.readRef(snapshot.stream)
+				unitPtr['baseObjects'] = None
+				unitPtr['id'] = StreamUtils.readInt(snapshot.stream, 32)
+				unitPtr['loaded'] = False
+				unitPtr['loadOutstanding'] = False
+
+				snapshot.references[refId] = unitPtr
+
 	# Class ID: 42
 	class InstanceDeserializer():
+		def __init__(self, cid):
+			self.cid = cid
+
 		def readAlloc(self, snapshot):
 			self.startIndex = snapshot.nextRefIndex
 			count = StreamUtils.readUnsigned(snapshot.stream)
-			self.nextFieldOffsetInWords = StreamUtils.readInt(snapshot.stream)
-			self.instanceSizeInWords = StreamUtils.readInt(snapshot.stream)
+			self.nextFieldOffsetInWords = StreamUtils.readInt(snapshot.stream, 32)
+			self.instanceSizeInWords = StreamUtils.readInt(snapshot.stream, 32)
 			for _ in range(count):
 				snapshot.assignRef('instance')
 			self.stopIndex = snapshot.nextRefIndex
+
+		def readFill(self, snapshot):
+			nextFieldOffset = self.nextFieldOffsetInWords << Constants.kWordSizeLog2
+			instanceSize = NumericUtils.roundUp(self.instanceSizeInWords * Constants.kWordSize, Constants.kObjectAlignment)
+			for refId in range(self.startIndex, self.stopIndex):
+				instancePtr = { }
+				instancePtr['data'] = []
+				StreamUtils.readBool(snapshot.stream) # Canonicalization plays no role in parsing
+				offset = 8
+				while offset < nextFieldOffset:
+					if snapshot.unboxedFieldsMapAt[cid].get(int(offset / Constants.kWordSize)):
+						#TODO: verify
+						instancePtr['data'].append(StreamUtils.readWordWith32BitReads(snapshot.stream))
+					else:
+						#TODO: verify
+						instancePtr['data'].append(StreamUtils.readRef(snapshot.stream))
+					offset += Constants.kWordSize
+				if offset < instanceSize:
+					#TODO: verify
+					instancePtr['data'].append(None)
+				
+				snapshot.references[refId] = instancePtr
 
 	# Class ID: 44
 	class TypeArgumentsDeserializer():
@@ -546,6 +674,21 @@ def getDeserializerForCid(cid):
 				length = StreamUtils.readUnsigned(snapshot.stream)
 				snapshot.assignRef('type args')
 			self.stopIndex = snapshot.nextRefIndex
+
+		def readFill(self, snapshot):
+			for refId in range(self.startIndex, self.stopIndex):
+				length = StreamUtils.readUnsigned(snapshot.stream)
+				isCanonical = StreamUtils.readBool(snapshot.stream)
+				typeArgsPtr = { }
+				typeArgsPtr['length'] = length
+				typeArgsPtr['hash'] = StreamUtils.readInt(snapshot.stream, 32)
+				typeArgsPtr['nullability'] = StreamUtils.readUnsigned(snapshot.stream)
+				typeArgsPtr['instantiations'] = StreamUtils.readRef(snapshot.stream)
+				typeArgsPtr['types'] = []
+				for j in range(length):
+					typeArgsPtr['types'].append(StreamUtils.readRef(snapshot.stream))
+
+				snapshot.references[refId] = typeArgsPtr
 
 	# Class ID: 46
 	class TypeDeserializer():
@@ -562,6 +705,27 @@ def getDeserializerForCid(cid):
 				snapshot.assignRef('type')
 			self.stopIndex = snapshot.nextRefIndex
 
+		def readFill(self, snapshot):
+			# Canonicalization plays no role in parsing
+			for refId in range(self.canonicalStartIndex, self.stopIndex):
+				typePtr = self._readFromTo(snapshot)
+				typePtr['tokenPos'] = StreamUtils.readTokenPosition(snapshot.stream)
+				combined = StreamUtils.readUnsigned(snapshot.stream, 8)
+				typePtr['typeState'] = combined >> Constants.kNullabilityBitSize
+				typePtr['nullability'] = combined & Constants.kNullabilityBitMask
+
+				snapshot.references[refId] = typePtr
+
+		def _readFromTo(self, snapshot):
+			typePtr = { }
+			typePtr['typeTestStub'] = StreamUtils.readUnsigned(snapshot.stream)
+			typePtr['typeClassId'] = StreamUtils.readUnsigned(snapshot.stream)
+			typePtr['arguments'] = StreamUtils.readUnsigned(snapshot.stream)
+			typePtr['hash'] = StreamUtils.readUnsigned(snapshot.stream)
+			typePtr['signature'] = StreamUtils.readUnsigned(snapshot.stream)
+
+			return typePtr
+
 	# Class ID: 47
 	class TypeRefDeserializer():
 		def readAlloc(self, snapshot):
@@ -570,6 +734,14 @@ def getDeserializerForCid(cid):
 			for _ in range(count):
 				snapshot.assignRef('type refs')
 			self.stopIndex = snapshot.nextRefIndex
+
+		def readFill(self, snapshot):
+			for refId in range(self.startIndex, self.stopIndex):
+				typePtr = { }
+				typePtr['typeTestStub'] = StreamUtils.readUnsigned(snapshot.stream)
+				typePtr['type'] = StreamUtils.readUnsigned(snapshot.stream)
+
+				snapshot.references[refId] = typePtr
 
 	# Class ID: 48
 	class TypeParameterDeserializer():
@@ -586,6 +758,30 @@ def getDeserializerForCid(cid):
 				snapshot.assignRef('type parameter')
 			self.stopIndex = snapshot.nextRefIndex
 
+		def readFill(self, snapshot):
+			# Canonicalization plays no role in parsing
+			for refId in range(self.canonicalStartIndex, self.stopIndex):
+				typePtr = self._readFromTo(snapshot)
+				typePtr['parametrizedClassId'] = StreamUtils.readInt(snapshot.stream, 32)
+				typePtr['tokenPos'] = StreamUtils.readTokenPosition(snapshot.stream)
+				typePtr['index'] = StreamUtils.readInt(snapshot.stream, 16)
+				combined = StreamUtils.readUnsigned(snapshot.stream, 8)
+				typePtr['flags'] = combined >> Constants.kNullabilityBitSize
+				typePtr['nullability'] = combined & Constants.kNullabilityBitMask
+
+				snapshot.references[refId] = typePtr
+
+		def _readFromTo(self, snapshot):
+			typePtr = { }
+			typePtr['typeTestStub'] = StreamUtils.readUnsigned(snapshot.stream)
+			typePtr['name'] = StreamUtils.readUnsigned(snapshot.stream)
+			typePtr['hash'] = StreamUtils.readUnsigned(snapshot.stream)
+			typePtr['bound'] = StreamUtils.readUnsigned(snapshot.stream)
+			typePtr['parametrizedFunction'] = StreamUtils.readUnsigned(snapshot.stream)
+
+			return typePtr
+
+
 	# Class ID: 49
 	class ClosureDeserializer():
 		def readAlloc(self, snapshot):
@@ -594,6 +790,19 @@ def getDeserializerForCid(cid):
 			for _ in range(count):
 				snapshot.assignRef('closure')
 			self.stopIndex = snapshot.nextRefIndex
+
+		def readFill(self, snapshot):
+			for refId in range(self.startIndex, self.stopIndex):
+				StreamUtils.readBool(snapshot.stream) # Canonicalization plays no role in parsing
+				closurePtr = { }
+				closurePtr['instantiatorTypeArguments'] = StreamUtils.readUnsigned(snapshot.stream)
+				closurePtr['functionTypeArguments'] = StreamUtils.readUnsigned(snapshot.stream)
+				closurePtr['delayedTypeArguments'] = StreamUtils.readUnsigned(snapshot.stream)
+				closurePtr['function'] = StreamUtils.readUnsigned(snapshot.stream)
+				closurePtr['context'] = StreamUtils.readUnsigned(snapshot.stream)
+				closurePtr['hash'] = StreamUtils.readUnsigned(snapshot.stream)
+
+				snapshot.references[refId] = closurePtr
 
 	# Class ID: 53
 	class MintDeserializer():
@@ -616,6 +825,11 @@ def getDeserializerForCid(cid):
 				snapshot.assignRef('double')
 			self.stopIndex = snapshot.nextRefIndex
 
+		def readFill(self, snapshot):
+			for refId in range(self.startIndex, self.stopIndex):
+				StreamUtils.readBool(snapshot.stream) # Canonicalization plays no role in parsing
+				snapshot.references[refId] = { 'value': StreamUtils.readInt(snapshot.stream, 64)}
+
 	# Class ID: 56
 	class GrowableObjectArrayDeserializer():
 		def readAlloc(self, snapshot):
@@ -625,21 +839,61 @@ def getDeserializerForCid(cid):
 				snapshot.assignRef('growable object array')
 			self.stopIndex = snapshot.nextRefIndex
 
+		def readFill(self, snapshot):
+			for refId in range(self.startIndex, self.stopIndex):
+				StreamUtils.readBool(snapshot.stream) # Canonicalization plays no role in parsing
+				listPtr = { }
+				listPtr['typeArguments'] = StreamUtils.readUnsigned(snapshot.stream)
+				listPtr['length'] = StreamUtils.readUnsigned(snapshot.stream)
+				listPtr['data'] = StreamUtils.readUnsigned(snapshot.stream)
+
+				snapshot.references[refId] = listPtr
+
 	# Aggregate deserializer for class IDs: 78, 79
 	class ArrayDeserializer():
 		def readAlloc(self, snapshot):
+			self.startIndex = snapshot.nextRefIndex
 			count = StreamUtils.readUnsigned(snapshot.stream)
 			for _ in range(count):
-				length = StreamUtils.readUnsigned(snapshot.stream)
+				StreamUtils.readUnsigned(snapshot.stream) # Length is read again during fill
 				snapshot.assignRef('array')
+			self.stopIndex = snapshot.nextRefIndex
 
+		def readFill(self, snapshot):
+			for refId in range(self.startIndex, self.stopIndex):
+				length = StreamUtils.readUnsigned(snapshot.stream)
+				StreamUtils.readBool(snapshot.stream) # Canonicalization plays no role in parsing
+				arrayPtr = { }
+				arrayPtr['typeArguments'] = StreamUtils.readRef(snapshot.stream)
+				arrayPtr['length'] = length
+				arrayPtr['data'] = []
+				for _ in range(length):
+					arrayPtr['data'].append(StreamUtils.readRef(snapshot.stream))
+
+				snapshot.references[refId] = arrayPtr
+
+	# Class ID: 81
 	class OneByteStringDeserializer():
 		def readAlloc(self, snapshot):
+			self.startIndex = snapshot.nextRefIndex
 			count = StreamUtils.readUnsigned(snapshot.stream)
 			for _ in range(count):
 				length = StreamUtils.readUnsigned(snapshot.stream)
 				snapshot.assignRef('one byte string')
+			self.stopIndex = snapshot.nextRefIndex
 
+		def readFill(self, snapshot):
+			for refId in range(self.startIndex, self.stopIndex):
+				length = StreamUtils.readUnsigned(snapshot.stream)
+				StreamUtils.readBool(snapshot.stream) # Canonicalization plays no role in parsing
+				strPtr = { }
+				strPtr['hash'] = StreamUtils.readInt(snapshot.stream, 32)
+				strPtr['length'] = length
+				strPtr['data'] = ''.join(chr(x) for x in snapshot.stream.read(length))
+
+				snapshot.references[refId] = strPtr
+
+	# Class ID: 82
 	class TwoByteStringDeserializer():
 		def readAlloc(self, snapshot):
 			self.startIndex = snapshot.nextRefIndex
@@ -649,7 +903,11 @@ def getDeserializerForCid(cid):
 				snapshot.assignRef('two-byte string')
 			self.stopIndex = snapshot.nextRefIndex
 
+	# Aggregate deserializer for class IDs: 108, 111, 114, 117, 120, 123, 126, 129, 132, 135, 138, 141, 144, 147
 	class TypedDataDeserializer():
+		def __init__(self, cid):
+			self.elementSize = TypedData.elementSizeInBytes(cid)
+
 		def readAlloc(self, snapshot):
 			self.startIndex = snapshot.nextRefIndex
 			count = StreamUtils.readUnsigned(snapshot.stream)
@@ -658,73 +916,96 @@ def getDeserializerForCid(cid):
 				snapshot.assignRef('typed data')
 			self.stopIndex = snapshot.nextRefIndex
 
-	if cid > ClassId.NUM_PREDEFINED.value:
-		return InstanceDeserializer()
-	elif ClassId(cid) is ClassId.ILLEGAL:
+		def readFill(self, snapshot):
+			for refId in range(self.startIndex, self.stopIndex):
+				length = StreamUtils.readUnsigned(snapshot.stream)
+				isCanonical = StreamUtils.readBool(snapshot.stream)
+				lengthInBytes = length * self.elementSize
+				dataPtr = { }
+				dataPtr['length'] = length
+				dataPtr['data'] = snapshot.stream.read(lengthInBytes)
+
+				snapshot.references[refId] = dataPtr
+
+	if cid >= ClassId.NUM_PREDEFINED.value or cid == ClassId.INSTANCE.value:
+		return InstanceDeserializer(cid)
+
+	if ClassId.isTypedDataViewClass(cid):
+		raise Exception('Typed data view deserializer not implemented')
+
+	if ClassId.isExternalTypedDataClass(cid):
+		raise Exception('External typed data deserializer not implemented')
+
+	if ClassId.isTypedDataClass(cid):
+		return TypedDataDeserializer(cid)
+
+	if includesCode:
+		if ClassId(cid) is ClassId.PC_DESCRIPTORS or ClassId(cid) is ClassId.CODE_SOURCE_MAP or \
+		ClassId(cid) is ClassId.COMPRESSED_STACK_MAPS or ClassId(cid) is ClassId.ONE_BYTE_STRING or \
+		ClassId(cid) is ClassId.TWO_BYTE_STRING:
+			return RODataDeserializer()
+
+	if ClassId(cid) is ClassId.ILLEGAL:
 		raise Exception('Encountered illegal cluster')
-	elif ClassId.isTypedDataClass(cid):
-		return TypedDataDeserializer()
-	elif ClassId(cid) is ClassId.CLASS:
+	if ClassId(cid) is ClassId.CLASS:
 		return ClassDeserializer()
-	elif ClassId(cid) is ClassId.PATCH_CLASS:
+	if ClassId(cid) is ClassId.PATCH_CLASS:
 		return PatchClassDeserializer()
-	elif ClassId(cid) is ClassId.FUNCTION:
+	if ClassId(cid) is ClassId.FUNCTION:
 		return FunctionDeserializer()
-	elif ClassId(cid) is ClassId.CLOSURE_DATA:
+	if ClassId(cid) is ClassId.CLOSURE_DATA:
 		return ClosureDataDeserializer()
-	elif ClassId(cid) is ClassId.SIGNATURE_DATA:
+	if ClassId(cid) is ClassId.SIGNATURE_DATA:
 		return SignatureDataDeserializer()
-	elif ClassId(cid) is ClassId.FIELD:
+	if ClassId(cid) is ClassId.FIELD:
 		return FieldDeserializer()
-	elif ClassId(cid) is ClassId.SCRIPT:
+	if ClassId(cid) is ClassId.SCRIPT:
 		return ScriptDeserializer()
-	elif ClassId(cid) is ClassId.LIBRARY:
+	if ClassId(cid) is ClassId.LIBRARY:
 		return LibraryDeserializer()
-	elif ClassId(cid) is ClassId.CODE:
+	if ClassId(cid) is ClassId.CODE:
 		return CodeDeserializer()
-	elif ClassId(cid) is ClassId.OBJECT_POOL:
+	if ClassId(cid) is ClassId.OBJECT_POOL:
 		return ObjectPoolDeserializer()
-	elif ClassId(cid) is ClassId.PC_DESCRIPTORS:
+	if ClassId(cid) is ClassId.PC_DESCRIPTORS:
 		return PcDescriptorsDeserializer()
-	elif ClassId(cid) is ClassId.CODE_SOURCE_MAP:
+	if ClassId(cid) is ClassId.CODE_SOURCE_MAP:
 		return RODataDeserializer()
-	elif ClassId(cid) is ClassId.COMPRESSED_STACK_MAPS:
+	if ClassId(cid) is ClassId.COMPRESSED_STACK_MAPS:
 		return RODataDeserializer()
-	elif ClassId(cid) is ClassId.EXCEPTION_HANDLERS:
+	if ClassId(cid) is ClassId.EXCEPTION_HANDLERS:
 		return ExceptionHandlersDeserializer()
-	elif ClassId(cid) is ClassId.UNLINKED_CALL:
+	if ClassId(cid) is ClassId.UNLINKED_CALL:
 		return UnlinkedCallDeserializer()
-	elif ClassId(cid) is ClassId.MEGAMORPHIC_CACHE:
+	if ClassId(cid) is ClassId.MEGAMORPHIC_CACHE:
 		return MegamorphicCacheDeserializer()
-	elif ClassId(cid) is ClassId.SUBTYPE_TEST_CACHE:
+	if ClassId(cid) is ClassId.SUBTYPE_TEST_CACHE:
 		return SubtypeTestCacheDeserializer()
-	elif ClassId(cid) is ClassId.LOADING_UNIT:
+	if ClassId(cid) is ClassId.LOADING_UNIT:
 		return LoadingUnitDeserializer()
-	elif ClassId(cid) is ClassId.INSTANCE:
-		return InstanceDeserializer()
-	elif ClassId(cid) is ClassId.TYPE_ARGUMENTS:
+	if ClassId(cid) is ClassId.TYPE_ARGUMENTS:
 		return TypeArgumentsDeserializer()
-	elif ClassId(cid) is ClassId.TYPE:
+	if ClassId(cid) is ClassId.TYPE:
 		return TypeDeserializer()
-	elif ClassId(cid) is ClassId.TYPE_REF:
+	if ClassId(cid) is ClassId.TYPE_REF:
 		return TypeRefDeserializer()
-	elif ClassId(cid) is ClassId.TYPE_PARAMETER:
+	if ClassId(cid) is ClassId.TYPE_PARAMETER:
 		return TypeParameterDeserializer()
-	elif ClassId(cid) is ClassId.CLOSURE:
+	if ClassId(cid) is ClassId.CLOSURE:
 		return ClosureDeserializer()
-	elif ClassId(cid) is ClassId.MINT:
+	if ClassId(cid) is ClassId.MINT:
 		return MintDeserializer()
-	elif ClassId(cid) is ClassId.DOUBLE:
+	if ClassId(cid) is ClassId.DOUBLE:
 		return DoubleDeserializer()
-	elif ClassId(cid) is ClassId.GROWABLE_OBJECT_ARRAY:
+	if ClassId(cid) is ClassId.GROWABLE_OBJECT_ARRAY:
 		return GrowableObjectArrayDeserializer()
-	elif ClassId(cid) is ClassId.ARRAY:
+	if ClassId(cid) is ClassId.ARRAY:
 		return ArrayDeserializer()
-	elif ClassId(cid) is ClassId.IMMUTABLE_ARRAY:
+	if ClassId(cid) is ClassId.IMMUTABLE_ARRAY:
 		return ArrayDeserializer()
-	elif ClassId(cid) is ClassId.ONE_BYTE_STRING:
+	if ClassId(cid) is ClassId.ONE_BYTE_STRING:
 		return OneByteStringDeserializer()
-	elif ClassId(cid) is ClassId.TWO_BYTE_STRING:
+	if ClassId(cid) is ClassId.TWO_BYTE_STRING:
 		return TwoByteStringDeserializer()
-	else:
-		raise Exception('Deserializer missing for class {}'.format(ClassId(cid).name))
+	
+	raise Exception('Deserializer missing for class {}'.format(ClassId(cid).name))
