@@ -34,3 +34,10 @@ kNativeFunction = 2
 
 kNullabilityBitSize = 2
 kNullabilityBitMask = 3
+
+kAppAOTSymbols = [
+    '_kDartVmSnapshotData',
+    '_kDartVmSnapshotInstructions',
+    '_kDartIsolateSnapshotData',
+    '_kDartIsolateSnapshotInstructions'
+]

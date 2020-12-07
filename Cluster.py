@@ -1,5 +1,5 @@
 import Constants
-
+from struct import unpack
 from ClassId import ClassId
 from Kind import Kind
 import TypedData
@@ -7,6 +7,19 @@ from UnboxedFieldBitmap import UnboxedFieldBitmap
 from Utils import DecodeUtils, NumericUtils, StreamUtils, isTopLevelCid
 
 def getDeserializerForCid(includesCode, cid):
+	# Abstract deserializer for class IDs: 22, 23, 81, 82
+	class RODataDeserializer():
+		def readAlloc(self, snapshot):
+			count = StreamUtils.readUnsigned(snapshot.stream)
+			runningOffset = 0
+			for _ in range(count):
+				runningOffset += StreamUtils.readUnsigned(snapshot.stream) << Constants.kObjectAlignmentLog2
+				snapshot.rodata.seek(runningOffset)
+				snapshot.assignRef(self.getObjectAt(snapshot))
+
+		def readFill(self, snapshot):
+			return
+
 	# Class ID: 4
 	class ClassDeserializer():
 		def readAlloc(self, snapshot):
@@ -53,6 +66,7 @@ def getDeserializerForCid(includesCode, cid):
 					StreamUtils.readUnsigned(snapshot.stream, 64)
 
 				snapshot.references[refId] = classPtr
+				snapshot.classes.append(classPtr)
 
 			for refId in range(self.startIndex, self.stopIndex):
 				classPtr = self._readFromTo(snapshot)
@@ -80,6 +94,7 @@ def getDeserializerForCid(includesCode, cid):
 					snapshot.unboxedFieldsMapAt[classId] = UnboxedFieldBitmap(StreamUtils.readUnsigned(snapshot.stream, 64))
 
 				snapshot.references[refId] = classPtr
+				snapshot.classes.append(classPtr)
 
 		def _readFromTo(self, snapshot):
 			classPtr = { }
@@ -93,7 +108,7 @@ def getDeserializerForCid(includesCode, cid):
 			classPtr['script'] = StreamUtils.readUnsigned(snapshot.stream)
 			classPtr['library'] = StreamUtils.readUnsigned(snapshot.stream)
 			classPtr['typeParameters'] = StreamUtils.readUnsigned(snapshot.stream)
-			classPtr['superType'] = StreamUtils.readUnsigned(snapshot.stream)
+			classPtr['superType'] = snapshot.references[StreamUtils.readUnsigned(snapshot.stream)]
 			classPtr['signatureFunction'] = StreamUtils.readUnsigned(snapshot.stream)
 			classPtr['constants'] = StreamUtils.readUnsigned(snapshot.stream)
 			classPtr['declarationType'] = StreamUtils.readUnsigned(snapshot.stream)
@@ -484,36 +499,40 @@ def getDeserializerForCid(includesCode, cid):
 
 				snapshot.references[refId] = poolPtr
 
-	# Class ID: 21
-	class PcDescriptorsDeserializer():
-		def readAlloc(self, snapshot):
-			self.startIndex = snapshot.nextRefIndex
-			count = StreamUtils.readUnsigned(snapshot.stream)
-			for _ in range(count):
-				length = StreamUtils.readUnsigned(snapshot.stream)
-				snapshot.assignRef('pc descriptors')
-			self.stopIndex = snapshot.nextRefIndex
+	if includesCode:
+		# Class ID: 21
+		class PcDescriptorsDeserializer(RODataDeserializer):
+			def getObjectAt(self, stream):
+				return 'pc descriptor'
 
-		def readFill(self, snapshot):
-			for refId in range(self.startIndex, self.stopIndex):
-				length = StreamUtils.readUnsigned(snapshot.stream)
-				descPtr = { }
-				descPtr['length'] = length
-				descPtr['data'] = snapshot.stream.read(length)
+		# Class ID: 22
+		class CodeSourceMapDeserializer(RODataDeserializer):
+			def getObjectAt(self, stream):
+				return 'code source map'
 
-				snapshot.references[refId] = descPtr
+		# Class ID: 23
+		class CompressedStackMapsDeserializer(RODataDeserializer):
+			def getObjectAt(self, stream):
+				return 'compressed stack maps'
+	else:
+		# Class ID: 21
+		class PcDescriptorsDeserializer():
+			def readAlloc(self, snapshot):
+				self.startIndex = snapshot.nextRefIndex
+				count = StreamUtils.readUnsigned(snapshot.stream)
+				for _ in range(count):
+					length = StreamUtils.readUnsigned(snapshot.stream)
+					snapshot.assignRef('pc descriptors')
+				self.stopIndex = snapshot.nextRefIndex
 
-	# Aggregate deserializer for class IDs: 22, 23, 81, 82
-	class RODataDeserializer():
-		def readAlloc(self, snapshot):
-			count = StreamUtils.readUnsigned(snapshot.stream)
-			runningOffset = 0
-			for _ in range(count):
-				runningOffset += StreamUtils.readUnsigned(snapshot.stream) << Constants.kObjectAlignmentLog2
-				snapshot.assignRef('ro data object')
+			def readFill(self, snapshot):
+				for refId in range(self.startIndex, self.stopIndex):
+					length = StreamUtils.readUnsigned(snapshot.stream)
+					descPtr = { }
+					descPtr['length'] = length
+					descPtr['data'] = snapshot.stream.read(length)
 
-		def readFill(self, snapshot):
-			return
+					snapshot.references[refId] = descPtr
 
 	# Class ID: 25
 	class ExceptionHandlersDeserializer():
@@ -872,36 +891,80 @@ def getDeserializerForCid(includesCode, cid):
 
 				snapshot.references[refId] = arrayPtr
 
-	# Class ID: 81
-	class OneByteStringDeserializer():
-		def readAlloc(self, snapshot):
-			self.startIndex = snapshot.nextRefIndex
-			count = StreamUtils.readUnsigned(snapshot.stream)
-			for _ in range(count):
-				length = StreamUtils.readUnsigned(snapshot.stream)
-				snapshot.assignRef('one byte string')
-			self.stopIndex = snapshot.nextRefIndex
+	if includesCode:
+		# Class ID: 81
+		class OneByteStringDeserializer(RODataDeserializer):
+			def getObjectAt(self, snapshot):
+				stream = snapshot.rodata
+				tags, hash_, length = unpack('<LLQ', stream.read(16))
+				return "".join(chr(x) for x in stream.read(length // 2))
 
-		def readFill(self, snapshot):
-			for refId in range(self.startIndex, self.stopIndex):
-				length = StreamUtils.readUnsigned(snapshot.stream)
-				StreamUtils.readBool(snapshot.stream) # Canonicalization plays no role in parsing
-				strPtr = { }
-				strPtr['hash'] = StreamUtils.readInt(snapshot.stream, 32)
-				strPtr['length'] = length
-				strPtr['data'] = ''.join(chr(x) for x in snapshot.stream.read(length))
+		# Class ID: 82
+		class TwoByteStringDeserializer(RODataDeserializer):
+			def getObjectAt(self, stream):
+				return 'two-byte string'
 
-				snapshot.references[refId] = strPtr
+	else:
+				# Class ID: 81
+		class OneByteStringDeserializer():
+			def readAlloc(self, snapshot):
+				self.startIndex = snapshot.nextRefIndex
+				count = StreamUtils.readUnsigned(snapshot.stream)
+				for _ in range(count):
+					length = StreamUtils.readUnsigned(snapshot.stream)
+					snapshot.assignRef('one byte string')
+				self.stopIndex = snapshot.nextRefIndex
 
-	# Class ID: 82
-	class TwoByteStringDeserializer():
-		def readAlloc(self, snapshot):
-			self.startIndex = snapshot.nextRefIndex
-			count = StreamUtils.readUnsigned(snapshot.stream)
-			for _ in range(count):
-				length = StreamUtils.readUnsigned(snapshot.stream)
-				snapshot.assignRef('two-byte string')
-			self.stopIndex = snapshot.nextRefIndex
+			def readFill(self, snapshot):
+				for refId in range(self.startIndex, self.stopIndex):
+					length = StreamUtils.readUnsigned(snapshot.stream)
+					StreamUtils.readBool(snapshot.stream) # Canonicalization plays no role in parsing
+					strPtr = { }
+					strPtr['hash'] = StreamUtils.readInt(snapshot.stream, 32)
+					strPtr['length'] = length
+					strPtr['data'] = ''.join(chr(x) for x in snapshot.stream.read(length))
+
+					snapshot.references[refId] = strPtr
+
+		# Class ID: 82
+		class TwoByteStringDeserializer():
+			def readAlloc(self, snapshot):
+				self.startIndex = snapshot.nextRefIndex
+				count = StreamUtils.readUnsigned(snapshot.stream)
+				for _ in range(count):
+					length = StreamUtils.readUnsigned(snapshot.stream)
+					snapshot.assignRef('two-byte string')
+				self.stopIndex = snapshot.nextRefIndex
+		# Class ID: 81
+		class OneByteStringDeserializer():
+			def readAlloc(self, snapshot):
+				self.startIndex = snapshot.nextRefIndex
+				count = StreamUtils.readUnsigned(snapshot.stream)
+				for _ in range(count):
+					length = StreamUtils.readUnsigned(snapshot.stream)
+					snapshot.assignRef('one byte string')
+				self.stopIndex = snapshot.nextRefIndex
+
+			def readFill(self, snapshot):
+				for refId in range(self.startIndex, self.stopIndex):
+					length = StreamUtils.readUnsigned(snapshot.stream)
+					StreamUtils.readBool(snapshot.stream) # Canonicalization plays no role in parsing
+					strPtr = { }
+					strPtr['hash'] = StreamUtils.readInt(snapshot.stream, 32)
+					strPtr['length'] = length
+					strPtr['data'] = ''.join(chr(x) for x in snapshot.stream.read(length))
+
+					snapshot.references[refId] = strPtr
+
+		# Class ID: 82
+		class TwoByteStringDeserializer():
+			def readAlloc(self, snapshot):
+				self.startIndex = snapshot.nextRefIndex
+				count = StreamUtils.readUnsigned(snapshot.stream)
+				for _ in range(count):
+					length = StreamUtils.readUnsigned(snapshot.stream)
+					snapshot.assignRef('two-byte string')
+				self.stopIndex = snapshot.nextRefIndex
 
 	# Aggregate deserializer for class IDs: 108, 111, 114, 117, 120, 123, 126, 129, 132, 135, 138, 141, 144, 147
 	class TypedDataDeserializer():
@@ -939,12 +1002,6 @@ def getDeserializerForCid(includesCode, cid):
 	if ClassId.isTypedDataClass(cid):
 		return TypedDataDeserializer(cid)
 
-	if includesCode:
-		if ClassId(cid) is ClassId.PC_DESCRIPTORS or ClassId(cid) is ClassId.CODE_SOURCE_MAP or \
-		ClassId(cid) is ClassId.COMPRESSED_STACK_MAPS or ClassId(cid) is ClassId.ONE_BYTE_STRING or \
-		ClassId(cid) is ClassId.TWO_BYTE_STRING:
-			return RODataDeserializer()
-
 	if ClassId(cid) is ClassId.ILLEGAL:
 		raise Exception('Encountered illegal cluster')
 	if ClassId(cid) is ClassId.CLASS:
@@ -970,9 +1027,9 @@ def getDeserializerForCid(includesCode, cid):
 	if ClassId(cid) is ClassId.PC_DESCRIPTORS:
 		return PcDescriptorsDeserializer()
 	if ClassId(cid) is ClassId.CODE_SOURCE_MAP:
-		return RODataDeserializer()
+		return CodeSourceMapDeserializer()
 	if ClassId(cid) is ClassId.COMPRESSED_STACK_MAPS:
-		return RODataDeserializer()
+		return CompressedStackMapsDeserializer()
 	if ClassId(cid) is ClassId.EXCEPTION_HANDLERS:
 		return ExceptionHandlersDeserializer()
 	if ClassId(cid) is ClassId.UNLINKED_CALL:

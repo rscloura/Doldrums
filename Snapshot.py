@@ -15,12 +15,15 @@ class Snapshot:
 	# hash = version hash (32 byte string)
 	# features = string array of features
  
-	def __init__(self, snapshot):
+	def __init__(self, data, dataOffset, instructions, instructionsOffset, base=None):
+		self.stream = BytesIO(data)
+
 		# Header
-		self.stream = BytesIO(snapshot)
 		self.magic = int.from_bytes(self.stream.read(Constants.kMagicSize), 'little')
 		self.size = int.from_bytes(self.stream.read(Constants.kLengthSize), 'little')
 		self.kind = Kind(int.from_bytes(self.stream.read(Constants.kKindSize), 'little'))
+		self.rodataOffset = NumericUtils.roundUp(self.size + Constants.kMagicSize, Constants.kMaxObjectAlignment)
+		self.rodata = BytesIO(self.stream.getbuffer()[self.rodataOffset:])
 		self.hash = self.stream.read(Constants.hashSize).decode('UTF-8')
 		self.features = list(map(lambda x: x.decode('UTF-8'), StreamUtils.readString(self.stream).split(b'\x20')))
 		
@@ -53,17 +56,23 @@ class Snapshot:
 		# Initialize references
 		self.references = ['INVALID'] # Reference count starts at 1
 		self.nextRefIndex = 1
-		self.addBaseObjects()
-		for _ in range(len(self.references), self.numBaseObjects):
-			self.assignRef('UNKNOWN') # Allocate missing references
+
+		# Initialize classes
+		self.classes = [ ]
+
+		if base is not None:
+			self.references = base.references
+			self.nextRefIndex = base.nextRefIndex
+		else:
+			self.addBaseObjects()
 
 		self.unboxedFieldsMapAt = { }
 
-		assert(len(self.references) == self.numBaseObjects)
+		assert(len(self.references) - 1 == self.numBaseObjects) # Reference count starts at 1
 
 		self.clusters = [ self.readClusterAlloc() for _ in range(self.numClusters) ]
 
-		assert(len(self.references) == self.numObjects)
+		assert(len(self.references) - 1 == self.numObjects) # Reference count starts at 1
 
 		for cluster in self.clusters:
 			cluster.readFill(self)
@@ -111,8 +120,6 @@ class Snapshot:
 
 	def readRoots(self):
 		self.symbolTable = StreamUtils.readRef(self.stream)
-		print(self.symbolTable)
-		print(self.references[47809])
 
 	def assignRef(self, obj):
 		self.references.append(obj)
@@ -182,3 +189,24 @@ class Snapshot:
 		prettyString += 'Field table length: ' + str(self.getFieldTableLength()) + '\n'
 		prettyString += 'Data image offset: ' + str(self.getDataImageOffset())
 		return prettyString
+
+	# WIP
+	def getClasses(self):
+		clazz = list(filter(lambda x: self.references[x['name']] == 'MyApp', self.classes))[0]
+		clazz['name'] = self.references[clazz['name']]
+		clazz['functions'] = list(map(lambda f: self._getFunction(f), self.references[clazz['functions']]['data']))
+		clazz['interfaces'] = list(map(lambda f: self._getInterface(i), self.references[clazz['interfaces']]['data']))
+
+	def _getFunction(self, f):
+		function = { }
+		function['name'] = self.references[self.references[f]['name']]
+		function['resultType'] = self.references[f]['resultType']
+
+		return function
+
+	def _getInterface(self, i):
+		interface = { }
+		interface['data']
+
+
+		return interface
