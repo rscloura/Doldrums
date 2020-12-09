@@ -6,7 +6,10 @@ from elftools.elf.sections import SymbolTableSection
 import Constants
 from Snapshot import Snapshot
 
-def parse_elf_snapshot(fname, **kwargs):
+from Resolver import DartClass
+from ClassId import *
+
+def parseELF(fname, **kwargs):
     f = ELFFile(open(fname, 'rb'))
     sections = list(f.iter_sections())
     tables = [ s for s in sections if isinstance(s, SymbolTableSection) ]
@@ -22,7 +25,6 @@ def parse_elf_snapshot(fname, **kwargs):
 
     vm = Snapshot(blobs[0], offsets[0], blobs[1], offsets[1])
     isolate = Snapshot(blobs[2], offsets[2], blobs[3], offsets[3], vm)
-    #isolate.getClasses()
 
 print('  ___      _    _                   ')
 print(' |   \\ ___| |__| |_ _ _  _ _ __  ___')
@@ -30,4 +32,4 @@ print(' | |) / _ \\ / _` | \'_| || | \'  \\(_-<')
 print(' |___/\\___/_\\__,_|_|  \\_,_|_|_|_/__/')
 print('------------------------------------\n')
 
-parse_elf_snapshot(sys.argv[1])
+parseELF(sys.argv[1])

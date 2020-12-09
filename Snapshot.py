@@ -57,8 +57,8 @@ class Snapshot:
 		self.references = ['INVALID'] # Reference count starts at 1
 		self.nextRefIndex = 1
 
-		# Initialize classes
-		self.classes = [ ]
+		# Initialize classes as a dictionary from an ID (see ClassDeserializer) to a deserialized class object
+		self.classes = { }
 
 		if base is not None:
 			self.references = base.references
@@ -126,7 +126,8 @@ class Snapshot:
 		self.nextRefIndex += 1
 
 	def readClusterAlloc(self):
-		deserializer = Cluster.getDeserializerForCid(self.includesCode, StreamUtils.readCid(self.stream))
+		cid = StreamUtils.readCid(self.stream)
+		deserializer = Cluster.getDeserializerForCid(self.includesCode, cid)
 		deserializer.readAlloc(self)
 		return deserializer
 
@@ -189,24 +190,3 @@ class Snapshot:
 		prettyString += 'Field table length: ' + str(self.getFieldTableLength()) + '\n'
 		prettyString += 'Data image offset: ' + str(self.getDataImageOffset())
 		return prettyString
-
-	# WIP
-	def getClasses(self):
-		clazz = list(filter(lambda x: self.references[x['name']] == 'MyApp', self.classes))[0]
-		clazz['name'] = self.references[clazz['name']]
-		clazz['functions'] = list(map(lambda f: self._getFunction(f), self.references[clazz['functions']]['data']))
-		clazz['interfaces'] = list(map(lambda f: self._getInterface(i), self.references[clazz['interfaces']]['data']))
-
-	def _getFunction(self, f):
-		function = { }
-		function['name'] = self.references[self.references[f]['name']]
-		function['resultType'] = self.references[f]['resultType']
-
-		return function
-
-	def _getInterface(self, i):
-		interface = { }
-		interface['data']
-
-
-		return interface
