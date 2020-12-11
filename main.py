@@ -1,3 +1,4 @@
+import argparse
 import sys
 
 from elftools.elf.elffile import ELFFile
@@ -28,11 +29,13 @@ def parseELF(fname, **kwargs):
 
     return isolate
 
-def dump(snapshot):
+def dump(snapshot, output):
+    f = open(output, 'w')
     for clazz in snapshot.classes.values():
         dartClass = DartClass(snapshot, clazz)
-        print(dartClass)
-        print('')
+        f.write(str(dartClass))
+        f.write('\n\n')
+    f.close()
 
 print('  ___      _    _                   ')
 print(' |   \\ ___| |__| |_ _ _  _ _ __  ___')
@@ -40,5 +43,10 @@ print(' | |) / _ \\ / _` | \'_| || | \'  \\(_-<')
 print(' |___/\\___/_\\__,_|_|  \\_,_|_|_|_/__/')
 print('-------------------------------------\n')
 
-isolate = parseELF(sys.argv[1])
-dump(isolate)
+parser = argparse.ArgumentParser(description='Parse the libapp.so file in Flutter apps for Android.')
+parser.add_argument('file', help='target Flutter binary')
+parser.add_argument('output', help='output file')
+
+args = parser.parse_args()
+isolate = parseELF(args.file)
+dump(isolate, args.output)
