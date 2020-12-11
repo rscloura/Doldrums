@@ -117,7 +117,7 @@ def getDeserializerForCid(includesCode, cid):
 			classPtr['script'] = StreamUtils.readUnsigned(snapshot.stream)
 			classPtr['library'] = StreamUtils.readUnsigned(snapshot.stream)
 			classPtr['typeParameters'] = StreamUtils.readUnsigned(snapshot.stream)
-			classPtr['superType'] = snapshot.references[StreamUtils.readUnsigned(snapshot.stream)]
+			classPtr['superType'] = StreamUtils.readUnsigned(snapshot.stream)
 			classPtr['signatureFunction'] = StreamUtils.readUnsigned(snapshot.stream)
 			classPtr['constants'] = StreamUtils.readUnsigned(snapshot.stream)
 			classPtr['declarationType'] = StreamUtils.readUnsigned(snapshot.stream)
@@ -444,6 +444,7 @@ def getDeserializerForCid(includesCode, cid):
 				return
 
 			#TODO
+			raise Exception('Raw instructions deserialization missing')
 
 
 	# Class ID: 20
@@ -689,19 +690,29 @@ def getDeserializerForCid(includesCode, cid):
 			self.canonicalStartIndex = snapshot.nextRefIndex
 			count = StreamUtils.readUnsigned(snapshot.stream)
 			for _ in range(count):
-				snapshot.assignRef('type (canonical)')
+				snapshot.assignRef('Canonical type stub')
 			self.canonicalStopIndex = snapshot.nextRefIndex
 
 			self.startIndex = snapshot.nextRefIndex
 			count = StreamUtils.readUnsigned(snapshot.stream)
 			for _ in range(count):
-				snapshot.assignRef('type')
+				snapshot.assignRef('Type stub')
 			self.stopIndex = snapshot.nextRefIndex
 
 		def readFill(self, snapshot):
-			# Canonicalization plays no role in parsing
-			for refId in range(self.canonicalStartIndex, self.stopIndex):
+			for refId in range(self.canonicalStartIndex, self.canonicalStopIndex):
 				typePtr = self._readFromTo(snapshot)
+				typePtr['isCanonical'] = True
+				typePtr['tokenPos'] = StreamUtils.readTokenPosition(snapshot.stream)
+				combined = StreamUtils.readUnsigned(snapshot.stream, 8)
+				typePtr['typeState'] = combined >> Constants.kNullabilityBitSize
+				typePtr['nullability'] = combined & Constants.kNullabilityBitMask
+
+				snapshot.references[refId] = typePtr
+
+			for refId in range(self.startIndex, self.stopIndex):
+				typePtr = self._readFromTo(snapshot)
+				typePtr['isCanonical'] = False
 				typePtr['tokenPos'] = StreamUtils.readTokenPosition(snapshot.stream)
 				combined = StreamUtils.readUnsigned(snapshot.stream, 8)
 				typePtr['typeState'] = combined >> Constants.kNullabilityBitSize
@@ -710,7 +721,7 @@ def getDeserializerForCid(includesCode, cid):
 				snapshot.references[refId] = typePtr
 
 		def _readFromTo(self, snapshot):
-			typePtr = { 'cid': ClassId.TYPE }
+			typePtr = { 'cid': ClassId.TYPE, 'isBase': False }
 			typePtr['typeTestStub'] = StreamUtils.readUnsigned(snapshot.stream)
 			typePtr['typeClassId'] = StreamUtils.readUnsigned(snapshot.stream)
 			typePtr['arguments'] = StreamUtils.readUnsigned(snapshot.stream)
@@ -761,7 +772,7 @@ def getDeserializerForCid(includesCode, cid):
 				snapshot.references[refId] = typePtr
 
 		def _readFromTo(self, snapshot):
-			typePtr = { 'cid': ClassId.TYPE_PARAMETER }
+			typePtr = { 'cid': ClassId.TYPE_PARAMETER, 'isBase': False }
 			typePtr['typeTestStub'] = StreamUtils.readUnsigned(snapshot.stream)
 			typePtr['name'] = StreamUtils.readUnsigned(snapshot.stream)
 			typePtr['hash'] = StreamUtils.readUnsigned(snapshot.stream)

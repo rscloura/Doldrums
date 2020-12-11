@@ -26,10 +26,19 @@ def parseELF(fname, **kwargs):
     vm = Snapshot(blobs[0], offsets[0], blobs[1], offsets[1])
     isolate = Snapshot(blobs[2], offsets[2], blobs[3], offsets[3], vm)
 
+    return isolate
+
+def dump(snapshot):
+    for clazz in snapshot.classes.values():
+        dartClass = DartClass(snapshot, clazz)
+        print(dartClass)
+        print('')
+
 print('  ___      _    _                   ')
 print(' |   \\ ___| |__| |_ _ _  _ _ __  ___')
 print(' | |) / _ \\ / _` | \'_| || | \'  \\(_-<')
 print(' |___/\\___/_\\__,_|_|  \\_,_|_|_|_/__/')
-print('------------------------------------\n')
+print('-------------------------------------\n')
 
-parseELF(sys.argv[1])
+isolate = parseELF(sys.argv[1])
+dump(isolate)

@@ -10,7 +10,7 @@ from Utils import *
 class Snapshot:
 	# snapshot = byte array of VM snapshot
 	# magic = snapshot header (size: kHeaderSize)
-	# size = snapshot's length in bytes
+	# size = snapshot's length in bytes (excluding the magic number)
 	# kind = snapshot's kind (enum)
 	# hash = version hash (32 byte string)
 	# features = string array of features
@@ -35,6 +35,7 @@ class Snapshot:
 		self.useBareInstructions = 'use_bare_instructions' in self.features
 		self.includesCode = self.kind == Kind.FULL_JIT or self.kind == Kind.FULL_AOT
 		self.instructionsImage = 0 #FIXME
+		self.instructionsOffset = instructionsOffset
 		self.previousTextOffset = 0
 		if 'x64-sysv' in self.features:
 			self.arch = 'X64'
@@ -82,42 +83,44 @@ class Snapshot:
 		self.dataImageOffset = NumericUtils.roundUp(self.length(), Constants.kMaxObjectAlignment)
 
 	def addBaseObjects(self):
+		#FIXME: review CIDs
 		baseObjects = [
-			'Null',
-			'Sentinel',
-			'TransitionSentinel',
-			'EmptyArray',
-			'ZeroArray',
-			'DynamicType',
-			'VoidType',
-			'EmptyTypeArguments',
-			'True',
-			'False',
-			'ExtractorParameterTypes',
-			'ExtractorParameterNames',
-			'EmptyContextScope',
-			'EmptyDescriptors',
-			'EmptyVarDescriptors',
-			'EmptyExceptionHandlers',
-			'ImplicitGetterBytecode',
-			'ImplicitSetterBytecode',
-			'ImplicitStaticGetterBytecode',
-			'MethodExtractorBytecode',
-			'InvokeClosureBytecode',
-			'InvokeFieldBytecode',
-			'NsmDispatcherBytecode',
-			'DynamicInvocationForwarderBytecode',
-			*('CachedArgsDescriptors' for _ in range(Constants.kCachedDescriptorCount)),
-			*('CachedICDataArrays' for _ in range(Constants.kCachedICDataArrayCount)),
-			'CachedArray',
-			*('ClassStub' for cid in range(ClassId.CLASS.value, ClassId.UNWIND_ERROR.value + 1) if (cid != ClassId.ERROR.value and cid != ClassId.CALL_SITE_DATA.value)),
-			'Dynamic CID',
-			'VoidCID',
-			*('StubCode' for _ in range(Constants.kNumStubEntries) if not Snapshot.includesCode(self.kind))
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'Null' },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'Sentinel' },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'TransitionSentinel' },
+			{ 'cid': ClassId.ARRAY, 'isBase': True, 'name': 'EmptyArray', 'data': [] },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'ZeroArray' },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'DynamicType' },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'VoidType' },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'EmptyTypeArguments' },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'True' },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'False' },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'ExtractorParameterTypes' },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'ExtractorParameterNames' },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'EmptyContextScope' },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'EmptyDescriptors' },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'EmptyVarDescriptors' },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'EmptyExceptionHandlers' },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'ImplicitGetterBytecode' },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'ImplicitSetterBytecode' },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'ImplicitStaticGetterBytecode' },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'MethodExtractorBytecode' },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'InvokeClosureBytecode' },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'InvokeFieldBytecode' },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'NsmDispatcherBytecode' },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'DynamicInvocationForwarderBytecode' },
+			*({ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'CachedArgsDescriptors' } for _ in range(Constants.kCachedDescriptorCount)),
+			*({ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'CachedICDataArrays' } for _ in range(Constants.kCachedICDataArrayCount)),
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'CachedArray' },
+			*({ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'ClassStub' } for cid in range(ClassId.CLASS.value, ClassId.UNWIND_ERROR.value + 1) if (cid != ClassId.ERROR.value and cid != ClassId.CALL_SITE_DATA.value)),
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'Dynamic CID' },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'VoidCID' },
+			*({ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'StubCode' } for _ in range(Constants.kNumStubEntries) if not Snapshot.includesCode(self.kind))
 		]
 		for obj in baseObjects:
 			self.assignRef(obj)
 
+	#TODO
 	def readRoots(self):
 		self.symbolTable = StreamUtils.readRef(self.stream)
 
