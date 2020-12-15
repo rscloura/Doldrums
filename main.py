@@ -31,17 +31,19 @@ def parseELF(fname, **kwargs):
 
 def dump(snapshot, output):
     f = open(output, 'w')
+    f.write('  ___      _    _                   \n')
+    f.write(' |   \\ ___| |__| |_ _ _  _ _ __  ___\n')
+    f.write(' | |) / _ \\ / _` | \'_| || | \'  \\(_-<\n')
+    f.write(' |___/\\___/_\\__,_|_|  \\_,_|_|_|_/__/\n')
+    f.write('-------------------------------------\n\n')
+    f.write('# SUMMARY\n\n')
+    f.write(snapshot.getSummary())
+    f.write('\n\n# CLASSES\n\n')
     for clazz in snapshot.classes.values():
         dartClass = DartClass(snapshot, clazz)
         f.write(str(dartClass))
         f.write('\n\n')
     f.close()
-
-print('  ___      _    _                   ')
-print(' |   \\ ___| |__| |_ _ _  _ _ __  ___')
-print(' | |) / _ \\ / _` | \'_| || | \'  \\(_-<')
-print(' |___/\\___/_\\__,_|_|  \\_,_|_|_|_/__/')
-print('-------------------------------------\n')
 
 parser = argparse.ArgumentParser(description='Parse the libapp.so file in Flutter apps for Android.')
 parser.add_argument('file', help='target Flutter binary')

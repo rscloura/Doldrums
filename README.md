@@ -1,6 +1,6 @@
 # Doldrums
 
-*To flutter: to move in quick, irregular motions, to beat rapidly, to be agitated.*
+*To flutter: to move in quick, irregular motions, to beat rapidly, to be agitated.*  
 *Doldrums: a period of stagnation.*
 
 Doldrums is a reverse engineering tool for Flutter apps targetting Android. Concretely, it is a parser and information extractor for the Flutter/Dart Android binary, conventionally named `libapp.so`, for all Dart version 2.10 releases. When run, it outputs a full dump of all classes present in the isolate snapshot.
@@ -34,7 +34,7 @@ class MyApp extends StatelessWidget {
 }
 ```
 
-The absolute code offset indicates the offset into the `libapp.so` file where the nativefunction may be found.
+The absolute code offset indicates the offset into the `libapp.so` file where the native function may be found.
 
 ## Reading material
 

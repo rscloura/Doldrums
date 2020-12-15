@@ -360,6 +360,21 @@ def getDeserializerForCid(includesCode, cid):
 
 			return libraryPtr
 
+	# Class ID: 14
+	class NamespaceDeserializer(CountDeserializer):
+		def readAlloc(self, snapshot):
+			super().readAlloc(snapshot, 'Namespace stub')
+
+		def readFill(self, snapshot):
+			for refId in range(self.startIndex, self.stopIndex):
+				namespacePtr = { 'cid': ClassId.NAMESPACE }
+				namespacePtr['library'] = StreamUtils.readUnsigned(snapshot.stream)
+				namespacePtr['showNames'] = StreamUtils.readUnsigned(snapshot.stream)
+				namespacePtr['hideNames'] = StreamUtils.readUnsigned(snapshot.stream)
+				namespacePtr['metadataField'] = StreamUtils.readUnsigned(snapshot.stream)
+
+				snapshot.references[refId] = namespacePtr
+
 	# Class ID: 16
 	class CodeDeserializer():
 		def readAlloc(self, snapshot):
@@ -446,6 +461,26 @@ def getDeserializerForCid(includesCode, cid):
 			#TODO
 			raise Exception('Raw instructions deserialization missing')
 
+	# Class ID: 17
+	class BytecodeDeserializer(CountDeserializer):
+		def readAlloc(self, snapshot):
+			super().readAlloc(snapshot, 'Bytecode stub')
+
+		def readFill(self, snapshot):
+			for refId in range(self.startIndex, self.stopIndex):
+				bytecodePtr = { 'cid': ClassId.BYTECODE }
+				bytecodePtr['instructions'] = 0
+				bytecodePtr['instructionsSize'] = StreamUtils.readInt(snapshot.stream, 32)
+				bytecodePtr['objectPool'] = StreamUtils.readUnsigned(snapshot.stream)
+				bytecodePtr['function'] = StreamUtils.readUnsigned(snapshot.stream)
+				bytecodePtr['closures'] = StreamUtils.readUnsigned(snapshot.stream)
+				bytecodePtr['exceptionHandlers'] = StreamUtils.readUnsigned(snapshot.stream)
+				bytecodePtr['pcDescriptors'] = StreamUtils.readUnsigned(snapshot.stream)
+				bytecodePtr['instructionsBinaryOffset'] = StreamUtils.readInt(snapshot.stream, 32)
+				bytecodePtr['sourcePositionsBinaryOffset'] = StreamUtils.readInt(snapshot.stream, 32)
+				bytecodePtr['localVariablesBinaryOffset'] = StreamUtils.readInt(snapshot.stream, 32)
+
+				snapshot.references[refId] = bytecodePtr
 
 	# Class ID: 20
 	class ObjectPoolDeserializer():
@@ -838,6 +873,18 @@ def getDeserializerForCid(includesCode, cid):
 
 				snapshot.references[refId] = listPtr
 
+	# Class ID: 77
+	class WeakSerializationReferenceDeserializer(CountDeserializer):
+		def readAlloc(self, snapshot):
+			super().readAlloc(snapshot, 'Weak deserialization reference stub')
+
+		def readFill(self, snapshot):
+			for refId in range(self.startIndex, self.stopIndex):
+				refPtr = { 'cid': ClassId.WEAK_SERIALIZATION_REFERENCE }
+				refPtr['id'] = StreamUtils.readCid(snapshot.stream)
+
+				snapshot.references[refId] = refPtr
+
 	# Aggregate deserializer for class IDs: 78, 79
 	class ArrayDeserializer():
 		def readAlloc(self, snapshot):
@@ -957,67 +1004,76 @@ def getDeserializerForCid(includesCode, cid):
 	if ClassId.isTypedDataClass(cid):
 		return TypedDataDeserializer(cid)
 
-	if ClassId(cid) is ClassId.ILLEGAL:
+	cidEnum = ClassId(cid)
+	if cidEnum is ClassId.ILLEGAL:
 		raise Exception('Encountered illegal cluster')
-	if ClassId(cid) is ClassId.CLASS:
+	if cidEnum is ClassId.CLASS:
 		return ClassDeserializer()
-	if ClassId(cid) is ClassId.PATCH_CLASS:
+	if cidEnum is ClassId.PATCH_CLASS:
 		return PatchClassDeserializer()
-	if ClassId(cid) is ClassId.FUNCTION:
+	if cidEnum is ClassId.FUNCTION:
 		return FunctionDeserializer()
-	if ClassId(cid) is ClassId.CLOSURE_DATA:
+	if cidEnum is ClassId.CLOSURE_DATA:
 		return ClosureDataDeserializer()
-	if ClassId(cid) is ClassId.SIGNATURE_DATA:
+	if cidEnum is ClassId.SIGNATURE_DATA:
 		return SignatureDataDeserializer()
-	if ClassId(cid) is ClassId.FIELD:
+	if cidEnum is ClassId.FIELD:
 		return FieldDeserializer()
-	if ClassId(cid) is ClassId.SCRIPT:
+	if cidEnum is ClassId.SCRIPT:
 		return ScriptDeserializer()
-	if ClassId(cid) is ClassId.LIBRARY:
+	if cidEnum is ClassId.LIBRARY:
 		return LibraryDeserializer()
-	if ClassId(cid) is ClassId.CODE:
+	if cidEnum is ClassId.NAMESPACE:
+		return NamespaceDeserializer()
+	if cidEnum is ClassId.CODE:
 		return CodeDeserializer()
-	if ClassId(cid) is ClassId.OBJECT_POOL:
+	#FIXME: should check if snapshot is not precompiled
+	if cidEnum is ClassId.BYTECODE:
+		return BytecodeDeserializer()
+	if cidEnum is ClassId.OBJECT_POOL:
 		return ObjectPoolDeserializer()
-	if ClassId(cid) is ClassId.PC_DESCRIPTORS:
+	if cidEnum is ClassId.PC_DESCRIPTORS:
 		return PcDescriptorsDeserializer()
-	if ClassId(cid) is ClassId.CODE_SOURCE_MAP:
+	if cidEnum is ClassId.CODE_SOURCE_MAP:
 		return CodeSourceMapDeserializer()
-	if ClassId(cid) is ClassId.COMPRESSED_STACK_MAPS:
+	if cidEnum is ClassId.COMPRESSED_STACK_MAPS:
 		return CompressedStackMapsDeserializer()
-	if ClassId(cid) is ClassId.EXCEPTION_HANDLERS:
+	if cidEnum is ClassId.EXCEPTION_HANDLERS:
 		return ExceptionHandlersDeserializer()
-	if ClassId(cid) is ClassId.UNLINKED_CALL:
+	if cidEnum is ClassId.UNLINKED_CALL:
 		return UnlinkedCallDeserializer()
-	if ClassId(cid) is ClassId.MEGAMORPHIC_CACHE:
+	if cidEnum is ClassId.MEGAMORPHIC_CACHE:
 		return MegamorphicCacheDeserializer()
-	if ClassId(cid) is ClassId.SUBTYPE_TEST_CACHE:
+	if cidEnum is ClassId.SUBTYPE_TEST_CACHE:
 		return SubtypeTestCacheDeserializer()
-	if ClassId(cid) is ClassId.LOADING_UNIT:
+	if cidEnum is ClassId.LOADING_UNIT:
 		return LoadingUnitDeserializer()
-	if ClassId(cid) is ClassId.TYPE_ARGUMENTS:
+	if cidEnum is ClassId.TYPE_ARGUMENTS:
 		return TypeArgumentsDeserializer()
-	if ClassId(cid) is ClassId.TYPE:
+	if cidEnum is ClassId.TYPE:
 		return TypeDeserializer()
-	if ClassId(cid) is ClassId.TYPE_REF:
+	if cidEnum is ClassId.TYPE_REF:
 		return TypeRefDeserializer()
-	if ClassId(cid) is ClassId.TYPE_PARAMETER:
+	if cidEnum is ClassId.TYPE_PARAMETER:
 		return TypeParameterDeserializer()
-	if ClassId(cid) is ClassId.CLOSURE:
+	if cidEnum is ClassId.CLOSURE:
 		return ClosureDeserializer()
-	if ClassId(cid) is ClassId.MINT:
+	if cidEnum is ClassId.MINT:
 		return MintDeserializer()
-	if ClassId(cid) is ClassId.DOUBLE:
+	if cidEnum is ClassId.DOUBLE:
 		return DoubleDeserializer()
-	if ClassId(cid) is ClassId.GROWABLE_OBJECT_ARRAY:
+	if cidEnum is ClassId.GROWABLE_OBJECT_ARRAY:
 		return GrowableObjectArrayDeserializer()
-	if ClassId(cid) is ClassId.ARRAY:
+	# FIXME: should only target precompiled AOT snapshots
+	if cidEnum is ClassId.WEAK_SERIALIZATION_REFERENCE:
+		return WeakSerializationReferenceDeserializer()
+	if cidEnum is ClassId.ARRAY:
 		return ArrayDeserializer()
-	if ClassId(cid) is ClassId.IMMUTABLE_ARRAY:
+	if cidEnum is ClassId.IMMUTABLE_ARRAY:
 		return ArrayDeserializer()
-	if ClassId(cid) is ClassId.ONE_BYTE_STRING:
+	if cidEnum is ClassId.ONE_BYTE_STRING:
 		return OneByteStringDeserializer()
-	if ClassId(cid) is ClassId.TWO_BYTE_STRING:
+	if cidEnum is ClassId.TWO_BYTE_STRING:
 		return TwoByteStringDeserializer()
 	
 	raise Exception('Deserializer missing for class {}'.format(ClassId(cid).name))
