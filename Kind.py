@@ -7,7 +7,7 @@ class Kind(Enum):
 	MESSAGE = 3 # A partial snapshot used only for isolate messaging.
 	NONE = 4 # gen_snapshot
 	INVALID = 5
- 
+
 	def __str__(self):
 		if(self.value == 0):
 			name = "Full (full snapshot of an application)"
@@ -23,5 +23,5 @@ class Kind(Enum):
 			name = "Invalid"
 		else:
 			name = "Unknown"
- 
+
 		return name

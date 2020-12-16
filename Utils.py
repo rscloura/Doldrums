@@ -2,16 +2,12 @@ import math
 
 import Constants
 
-class NumericUtils: 
-	def isPowerOfTwo(n):
-		return ((n & (n - 1)) == 0) and (n != 0)
- 
+class NumericUtils:
 	def roundDown(n, m):
-		assert(NumericUtils.isPowerOfTwo(m))
-		return n & -m
- 
+		return n - n % m
+
 	def roundUp(n, m):
-		return NumericUtils.roundDown(n + m - 1, m)
+		return n + m - n % m
 
 class StreamUtils:
 	kDataBitsPerByte = 7
