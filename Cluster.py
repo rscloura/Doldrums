@@ -12,10 +12,10 @@ def getDeserializerForCid(includesCode, cid):
 		def readAlloc(self, snapshot):
 			count = StreamUtils.readUnsigned(snapshot.stream)
 			runningOffset = 0
-			for _ in range(count):
+			for x in range(count):
 				runningOffset += StreamUtils.readUnsigned(snapshot.stream) << Constants.kObjectAlignmentLog2
 				snapshot.rodata.seek(runningOffset)
-				snapshot.assignRef({ 'cid': self.cid, 'data': self.getObjectAt(snapshot) })
+				snapshot.assignRef({ 'cid': self.cid, 'refId': snapshot.nextRefIndex,'data': self.getObjectAt(snapshot) })
 
 		def readFill(self, snapshot):
 			return
@@ -50,6 +50,7 @@ def getDeserializerForCid(includesCode, cid):
 				classPtr = self._readFromTo(snapshot)
 				classId = StreamUtils.readCid(snapshot.stream)
 				classPtr['id'] = classId
+				classPtr['refId'] = snapshot.nextRefIndex
 
 				if (not snapshot.isPrecompiled) and (not snapshot.kind is Kind.FULL_AOT):
 					classPtr['binaryDeclaration'] = StreamUtils.readUnsigned(snapshot.stream, 32)
@@ -81,6 +82,7 @@ def getDeserializerForCid(includesCode, cid):
 				classPtr = self._readFromTo(snapshot)
 				classId = StreamUtils.readCid(snapshot.stream)
 				classPtr['id'] = classId
+				classPtr['refId'] = snapshot.nextRefIndex
 
 				if (not snapshot.isPrecompiled) and (not snapshot.kind is Kind.FULL_AOT):
 					classPtr['binaryDeclaration'] = StreamUtils.readUnsigned(snapshot.stream, 32)
@@ -145,7 +147,7 @@ def getDeserializerForCid(includesCode, cid):
 				snapshot.references[refId] = classPtr
 
 		def _readFromTo(self, snapshot):
-			classPtr = { 'cid': ClassId.PATCH_CLASS }
+			classPtr = { 'cid': ClassId.PATCH_CLASS, 'refId': snapshot.nextRefIndex }
 			classPtr['patchedClass'] = StreamUtils.readUnsigned(snapshot.stream)
 			classPtr['originClass'] = StreamUtils.readUnsigned(snapshot.stream)
 			classPtr['script'] = StreamUtils.readUnsigned(snapshot.stream)
@@ -193,7 +195,7 @@ def getDeserializerForCid(includesCode, cid):
 				snapshot.references[refId] = funcPtr
 
 		def _readFromTo(self, snapshot):
-			funcPtr = { 'cid': ClassId.FUNCTION }
+			funcPtr = { 'cid': ClassId.FUNCTION, 'refId': snapshot.nextRefIndex }
 			funcPtr['name'] = StreamUtils.readUnsigned(snapshot.stream)
 			funcPtr['owner'] = StreamUtils.readUnsigned(snapshot.stream)
 			funcPtr['resultType'] = StreamUtils.readUnsigned(snapshot.stream)
@@ -211,7 +213,7 @@ def getDeserializerForCid(includesCode, cid):
 
 		def readFill(self, snapshot):
 			for refId in range(self.startIndex, self.stopIndex):
-				closureDataPtr = { 'cid': ClassId.CLOSURE_DATA }
+				closureDataPtr = { 'cid': ClassId.CLOSURE_DATA, 'refId': snapshot.nextRefIndex }
 
 				if (snapshot.kind is Kind.FULL_AOT):
 					closureDataPtr['contextScope'] = None
@@ -236,11 +238,33 @@ def getDeserializerForCid(includesCode, cid):
 				snapshot.references[refId] = dataPtr
 
 		def _readFromTo(self, snapshot):
-			dataPtr = { 'cid': ClassId.SIGNATURE_DATA }
+			dataPtr = { 'cid': ClassId.SIGNATURE_DATA, 'refId': snapshot.nextRefIndex }
 			dataPtr['parentFunction'] = StreamUtils.readUnsigned(snapshot.stream)
 			dataPtr['signatureType'] = StreamUtils.readUnsigned(snapshot.stream)
 
 			return dataPtr
+
+	# Class ID: 10
+	class FfiTrampolineDataDeserializer(CountDeserializer):
+		def readAlloc(self, snapshot):
+			super().readAlloc(snapshot, 'FFI trampoline data stub')
+
+		def readFill(self, snapshot):
+			for refId in range(self.startIndex, self.stopIndex):
+				dataPtr = self._readFromTo(snapshot)
+				dataPtr['callbackId'] = StreamUtils.readUnsigned(snapshot.stream) if snapshot.kind is Kind.FULL_AOT else 0
+
+				snapshot.references[refId] = dataPtr
+			
+		def _readFromTo(self, snapshot):
+			dataPtr = { 'cid': ClassId.FFI_TRAMPOLINE_DATA, 'refId': snapshot.nextRefIndex }
+			dataPtr['signatureType'] = StreamUtils.readUnsigned(snapshot.stream)
+			dataPtr['CSignature'] = StreamUtils.readUnsigned(snapshot.stream)
+			dataPtr['callbackTarget'] = StreamUtils.readUnsigned(snapshot.stream)
+			dataPtr['callbackExceptionalReturn'] = StreamUtils.readUnsigned(snapshot.stream)
+
+			return dataPtr
+
 
 	# Class ID: 11
 	class FieldDeserializer(CountDeserializer):
@@ -282,7 +306,7 @@ def getDeserializerForCid(includesCode, cid):
 				snapshot.references[refId] = fieldPtr
 
 		def _readFromTo(self, snapshot):
-			fieldPtr = { 'cid': ClassId.FIELD }
+			fieldPtr = { 'cid': ClassId.FIELD, 'refId': snapshot.nextRefIndex }
 			fieldPtr['name'] = StreamUtils.readUnsigned(snapshot.stream)
 			fieldPtr['owner'] = StreamUtils.readUnsigned(snapshot.stream)
 			fieldPtr['type'] = StreamUtils.readUnsigned(snapshot.stream)
@@ -308,7 +332,7 @@ def getDeserializerForCid(includesCode, cid):
 				snapshot.references[refId] = scriptPtr
 
 		def _readFromTo(self, snapshot):
-			scriptPtr = { 'cid': ClassId.SCRIPT }
+			scriptPtr = { 'cid': ClassId.SCRIPT, 'refId': snapshot.nextRefIndex }
 			scriptPtr['url'] = StreamUtils.readUnsigned(snapshot.stream)
 
 			if snapshot.kind is Kind.FULL or snapshot.kind is Kind.FULL_JIT:
@@ -343,7 +367,7 @@ def getDeserializerForCid(includesCode, cid):
 				snapshot.references[refId] = libraryPtr
 
 		def _readFromTo(self, snapshot):
-			libraryPtr = { 'cid': ClassId.LIBRARY }
+			libraryPtr = { 'cid': ClassId.LIBRARY, 'refId': snapshot.nextRefIndex }
 			libraryPtr['name'] = StreamUtils.readUnsigned(snapshot.stream)
 			libraryPtr['url'] = StreamUtils.readUnsigned(snapshot.stream)
 			libraryPtr['privateKey'] = StreamUtils.readUnsigned(snapshot.stream)
@@ -367,7 +391,7 @@ def getDeserializerForCid(includesCode, cid):
 
 		def readFill(self, snapshot):
 			for refId in range(self.startIndex, self.stopIndex):
-				namespacePtr = { 'cid': ClassId.NAMESPACE }
+				namespacePtr = { 'cid': ClassId.NAMESPACE, 'refId': snapshot.nextRefIndex }
 				namespacePtr['library'] = StreamUtils.readUnsigned(snapshot.stream)
 				namespacePtr['showNames'] = StreamUtils.readUnsigned(snapshot.stream)
 				namespacePtr['hideNames'] = StreamUtils.readUnsigned(snapshot.stream)
@@ -397,7 +421,7 @@ def getDeserializerForCid(includesCode, cid):
 				snapshot.references[refId] = codePtr
 
 		def _readFill(self, snapshot, refId, deferred):
-			codePtr = { 'cid': ClassId.CODE }
+			codePtr = { 'cid': ClassId.CODE, 'refId': snapshot.nextRefIndex }
 			self._readInstructions(snapshot, codePtr, deferred)
 
 			if not (snapshot.kind is Kind.FULL_AOT and snapshot.useBareInstructions):
@@ -468,7 +492,7 @@ def getDeserializerForCid(includesCode, cid):
 
 		def readFill(self, snapshot):
 			for refId in range(self.startIndex, self.stopIndex):
-				bytecodePtr = { 'cid': ClassId.BYTECODE }
+				bytecodePtr = { 'cid': ClassId.BYTECODE, 'refId': snapshot.nextRefIndex }
 				bytecodePtr['instructions'] = 0
 				bytecodePtr['instructionsSize'] = StreamUtils.readInt(snapshot.stream, 32)
 				bytecodePtr['objectPool'] = StreamUtils.readUnsigned(snapshot.stream)
@@ -494,7 +518,7 @@ def getDeserializerForCid(includesCode, cid):
 
 		def readFill(self, snapshot):
 			for refId in range(self.startIndex, self.stopIndex):
-				poolPtr = { 'cid': ClassId.OBJECT_POOL }
+				poolPtr = { 'cid': ClassId.OBJECT_POOL, 'refId': snapshot.nextRefIndex }
 				length = StreamUtils.readUnsigned(snapshot.stream)
 				poolPtr['length'] = length
 				poolPtr['entryBits'] = [ ]
@@ -557,7 +581,7 @@ def getDeserializerForCid(includesCode, cid):
 			def readFill(self, snapshot):
 				for refId in range(self.startIndex, self.stopIndex):
 					length = StreamUtils.readUnsigned(snapshot.stream)
-					descPtr = { }
+					descPtr = { 'cid': ClassId.PC_DESCRIPTORS, 'refId': snapshot.nextRefIndex }
 					descPtr['length'] = length
 					descPtr['data'] = snapshot.stream.read(length)
 
@@ -576,7 +600,7 @@ def getDeserializerForCid(includesCode, cid):
 		def readFill(self, snapshot):
 			for refId in range(self.startIndex, self.stopIndex):
 				length = StreamUtils.readUnsigned(snapshot.stream)
-				handlersPtr = { 'cid': ClassId.EXCEPTION_HANDLERS }
+				handlersPtr = { 'cid': ClassId.EXCEPTION_HANDLERS, 'refId': snapshot.nextRefIndex }
 				handlersPtr['numEntries'] = length
 				handlersPtr['handledTypesData'] = StreamUtils.readRef(snapshot.stream)
 				data = []
@@ -606,7 +630,7 @@ def getDeserializerForCid(includesCode, cid):
 				snapshot.references[refId] = unlinkedPtr
 
 		def _readFromTo(self, snapshot):
-			unlinkedPtr = { 'cid': ClassId.UNLINKED_CALL }
+			unlinkedPtr = { 'cid': ClassId.UNLINKED_CALL, 'refId': snapshot.nextRefIndex }
 			unlinkedPtr['targetName'] = StreamUtils.readUnsigned(snapshot.stream)
 			unlinkedPtr['argsDescriptor'] = StreamUtils.readUnsigned(snapshot.stream)
 
@@ -625,7 +649,7 @@ def getDeserializerForCid(includesCode, cid):
 				snapshot.references[refId] = cachePtr
 
 		def _readFromTo(self, snapshot):
-			cachePtr = { 'cid': ClassId.MEGAMORPHIC_CACHE }
+			cachePtr = { 'cid': ClassId.MEGAMORPHIC_CACHE, 'refId': snapshot.nextRefIndex }
 			cachePtr['targetName'] = StreamUtils.readUnsigned(snapshot.stream)
 			cachePtr['argsDescriptor'] = StreamUtils.readUnsigned(snapshot.stream)
 			cachePtr['buckets'] = StreamUtils.readUnsigned(snapshot.stream)
@@ -640,7 +664,7 @@ def getDeserializerForCid(includesCode, cid):
 
 		def readFill(self, snapshot):
 			for refId in range(self.startIndex, self.stopIndex):
-				cachePtr = { 'cid': ClassId.SUBTYPE_TEST_CACHE }
+				cachePtr = { 'cid': ClassId.SUBTYPE_TEST_CACHE, 'refId': snapshot.nextRefIndex }
 				cachePtr['cache'] = StreamUtils.readRef(snapshot.stream)
 
 				snapshot.references[refId] = cachePtr
@@ -652,7 +676,7 @@ def getDeserializerForCid(includesCode, cid):
 
 		def readFill(self, snapshot):
 			for refId in range(self.startIndex, self.stopIndex):
-				unitPtr = { 'cid': ClassId.LOADING_UNIT }
+				unitPtr = { 'cid': ClassId.LOADING_UNIT, 'refId': snapshot.nextRefIndex }
 				unitPtr['parent'] = StreamUtils.readRef(snapshot.stream)
 				unitPtr['baseObjects'] = None
 				unitPtr['id'] = StreamUtils.readInt(snapshot.stream, 32)
@@ -676,7 +700,7 @@ def getDeserializerForCid(includesCode, cid):
 			nextFieldOffset = self.nextFieldOffsetInWords << Constants.kWordSizeLog2
 			instanceSize = NumericUtils.roundUp(self.instanceSizeInWords * Constants.kWordSize, Constants.kObjectAlignment)
 			for refId in range(self.startIndex, self.stopIndex):
-				instancePtr = { 'cid': ClassId.INSTANCE }
+				instancePtr = { 'cid': ClassId.INSTANCE, 'refId': snapshot.nextRefIndex }
 				instancePtr['isCanonical'] = StreamUtils.readBool(snapshot.stream)
 				instancePtr['data'] = []
 				offset = 8
@@ -708,7 +732,7 @@ def getDeserializerForCid(includesCode, cid):
 			for refId in range(self.startIndex, self.stopIndex):
 				length = StreamUtils.readUnsigned(snapshot.stream)
 				isCanonical = StreamUtils.readBool(snapshot.stream)
-				typeArgsPtr = { 'cid': ClassId.TYPE_ARGUMENTS }
+				typeArgsPtr = { 'cid': ClassId.TYPE_ARGUMENTS, 'refId': snapshot.nextRefIndex }
 				typeArgsPtr['length'] = length
 				typeArgsPtr['hash'] = StreamUtils.readInt(snapshot.stream, 32)
 				typeArgsPtr['nullability'] = StreamUtils.readUnsigned(snapshot.stream)
@@ -756,7 +780,7 @@ def getDeserializerForCid(includesCode, cid):
 				snapshot.references[refId] = typePtr
 
 		def _readFromTo(self, snapshot):
-			typePtr = { 'cid': ClassId.TYPE, 'isBase': False }
+			typePtr = { 'cid': ClassId.TYPE, 'refId': snapshot.nextRefIndex, 'isBase': False }
 			typePtr['typeTestStub'] = StreamUtils.readUnsigned(snapshot.stream)
 			typePtr['typeClassId'] = StreamUtils.readUnsigned(snapshot.stream)
 			typePtr['arguments'] = StreamUtils.readUnsigned(snapshot.stream)
@@ -772,7 +796,7 @@ def getDeserializerForCid(includesCode, cid):
 
 		def readFill(self, snapshot):
 			for refId in range(self.startIndex, self.stopIndex):
-				typePtr = { 'cid': ClassId.TYPE_REF }
+				typePtr = { 'cid': ClassId.TYPE_REF, 'refId': snapshot.nextRefIndex }
 				typePtr['typeTestStub'] = StreamUtils.readUnsigned(snapshot.stream)
 				typePtr['type'] = StreamUtils.readUnsigned(snapshot.stream)
 
@@ -807,7 +831,7 @@ def getDeserializerForCid(includesCode, cid):
 				snapshot.references[refId] = typePtr
 
 		def _readFromTo(self, snapshot):
-			typePtr = { 'cid': ClassId.TYPE_PARAMETER, 'isBase': False }
+			typePtr = { 'cid': ClassId.TYPE_PARAMETER, 'refId': snapshot.nextRefIndex, 'isBase': False }
 			typePtr['typeTestStub'] = StreamUtils.readUnsigned(snapshot.stream)
 			typePtr['name'] = StreamUtils.readUnsigned(snapshot.stream)
 			typePtr['hash'] = StreamUtils.readUnsigned(snapshot.stream)
@@ -824,7 +848,7 @@ def getDeserializerForCid(includesCode, cid):
 
 		def readFill(self, snapshot):
 			for refId in range(self.startIndex, self.stopIndex):
-				closurePtr = { 'cid': ClassId.CLOSURE }
+				closurePtr = { 'cid': ClassId.CLOSURE, 'refId': snapshot.nextRefIndex }
 				closurePtr['isCanonical'] = StreamUtils.readBool(snapshot.stream)
 				closurePtr['instantiatorTypeArguments'] = StreamUtils.readUnsigned(snapshot.stream)
 				closurePtr['functionTypeArguments'] = StreamUtils.readUnsigned(snapshot.stream)
@@ -856,7 +880,7 @@ def getDeserializerForCid(includesCode, cid):
 			for refId in range(self.startIndex, self.stopIndex):
 				isCanonical = StreamUtils.readBool(snapshot.stream)
 				value = StreamUtils.readInt(snapshot.stream, 64)
-				snapshot.references[refId] = { 'cid': ClassId.DOUBLE, 'isCanonical': isCanonical,  'value': value }
+				snapshot.references[refId] = { 'cid': ClassId.DOUBLE, 'refId': snapshot.nextRefIndex, 'isCanonical': isCanonical,  'value': value }
 
 	# Class ID: 56
 	class GrowableObjectArrayDeserializer(CountDeserializer):
@@ -865,7 +889,7 @@ def getDeserializerForCid(includesCode, cid):
 
 		def readFill(self, snapshot):
 			for refId in range(self.startIndex, self.stopIndex):
-				listPtr = { 'cid': ClassId.GROWABLE_OBJECT_ARRAY }
+				listPtr = { 'cid': ClassId.GROWABLE_OBJECT_ARRAY, 'refId': snapshot.nextRefIndex }
 				listPtr['isCanonical'] = StreamUtils.readBool(snapshot.stream)
 				listPtr['typeArguments'] = StreamUtils.readUnsigned(snapshot.stream)
 				listPtr['length'] = StreamUtils.readUnsigned(snapshot.stream)
@@ -880,7 +904,7 @@ def getDeserializerForCid(includesCode, cid):
 
 		def readFill(self, snapshot):
 			for refId in range(self.startIndex, self.stopIndex):
-				refPtr = { 'cid': ClassId.WEAK_SERIALIZATION_REFERENCE }
+				refPtr = { 'cid': ClassId.WEAK_SERIALIZATION_REFERENCE, 'refId': snapshot.nextRefIndex }
 				refPtr['id'] = StreamUtils.readCid(snapshot.stream)
 
 				snapshot.references[refId] = refPtr
@@ -897,7 +921,7 @@ def getDeserializerForCid(includesCode, cid):
 
 		def readFill(self, snapshot):
 			for refId in range(self.startIndex, self.stopIndex):
-				arrayPtr = { 'cid': ClassId.ARRAY }
+				arrayPtr = { 'cid': ClassId.ARRAY, 'refId': snapshot.nextRefIndex }
 				length = StreamUtils.readUnsigned(snapshot.stream)
 				arrayPtr['isCanonical'] = StreamUtils.readBool(snapshot.stream)
 				arrayPtr['typeArguments'] = StreamUtils.readRef(snapshot.stream)
@@ -947,7 +971,7 @@ def getDeserializerForCid(includesCode, cid):
 				for refId in range(self.startIndex, self.stopIndex):
 					length = StreamUtils.readUnsigned(snapshot.stream)
 					StreamUtils.readBool(snapshot.stream) # Canonicalization plays no role in parsing
-					strPtr = { }
+					strPtr = { 'cid': ClassId.ONE_BYTE_STRING, 'refId': snapshot.nextRefIndex }
 					strPtr['hash'] = StreamUtils.readInt(snapshot.stream, 32)
 					strPtr['length'] = length
 					strPtr['data'] = ''.join(chr(x) for x in snapshot.stream.read(length))
@@ -986,7 +1010,7 @@ def getDeserializerForCid(includesCode, cid):
 				length = StreamUtils.readUnsigned(snapshot.stream)
 				isCanonical = StreamUtils.readBool(snapshot.stream)
 				lengthInBytes = length * self.elementSize
-				dataPtr = { 'cid': self.cid }
+				dataPtr = { 'cid': self.cid, 'refId': snapshot.nextRefIndex }
 				dataPtr['length'] = length
 				dataPtr['data'] = snapshot.stream.read(lengthInBytes)
 
@@ -1017,6 +1041,8 @@ def getDeserializerForCid(includesCode, cid):
 		return ClosureDataDeserializer()
 	if cidEnum is ClassId.SIGNATURE_DATA:
 		return SignatureDataDeserializer()
+	if cidEnum is ClassId.FFI_TRAMPOLINE_DATA:
+		return FfiTrampolineDataDeserializer()
 	if cidEnum is ClassId.FIELD:
 		return FieldDeserializer()
 	if cidEnum is ClassId.SCRIPT:
