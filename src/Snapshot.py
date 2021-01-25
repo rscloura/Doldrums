@@ -44,6 +44,8 @@ class Snapshot:
 		self.size = int.from_bytes(self.stream.read(Constants.kLengthSize), 'little')
 		self.kind = Kind(int.from_bytes(self.stream.read(Constants.kKindSize), 'little'))
 		self.hash = self.stream.read(Constants.hashSize).decode('UTF-8')
+		if (self.hash != '8ee4ef7a67df9845fba331734198a953'):
+			raise Exception('Unsupported Dart version: ' + self.hash)
 		self.features = list(map(lambda x: x.decode('UTF-8'), StreamUtils.readString(self.stream).split(b'\x20')))
 		self.numBaseObjects = StreamUtils.readUnsigned(self.stream)
 		self.numObjects = StreamUtils.readUnsigned(self.stream)
@@ -63,10 +65,22 @@ class Snapshot:
 		self.previousTextOffset = 0
 		if 'x64-sysv' in self.features:
 			self.arch = 'X64'
+			self.is64 = True
 			Constants.kMonomorphicEntryOffsetAOT = 8
 			Constants.kPolymorphicEntryOffsetAOT = 22
+		elif 'arm-eabi' in self.features:
+			self.arch = 'ARM'
+			self.is64 = False
+			Constants.kWordSize = 4
+			Constants.kWordSizeLog2 = 2
+			Constants.kObjectAlignment = 8
+			Constants.kObjectAlignmentLog2 = 3
+			Constants.kMonomorphicEntryOffsetAOT = 0
+			Constants.kPolymorphicEntryOffsetAOT = 12
+			Constants.kNumRead32PerWord = int(4 / Constants.kNumBytesPerRead32)
 		elif 'arm64-sysv' in self.features:
 			self.arch = 'ARM64'
+			self.is64 = True
 			Constants.kMonomorphicEntryOffsetAOT = 8
 			Constants.kPolymorphicEntryOffsetAOT = 20
 		else:

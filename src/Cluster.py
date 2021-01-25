@@ -703,7 +703,7 @@ def getDeserializerForCid(includesCode, cid):
 				instancePtr = { 'cid': ClassId.INSTANCE, 'refId': snapshot.nextRefIndex }
 				instancePtr['isCanonical'] = StreamUtils.readBool(snapshot.stream)
 				instancePtr['data'] = []
-				offset = 8
+				offset = 8 if snapshot.is64 else 4
 				while offset < nextFieldOffset:
 					if snapshot.unboxedFieldsMapAt[cid].get(int(offset / Constants.kWordSize)):
 						#TODO: verify
@@ -715,6 +715,7 @@ def getDeserializerForCid(includesCode, cid):
 				if offset < instanceSize:
 					#TODO: verify
 					instancePtr['data'].append(None)
+					offset += Constants.kWordSize
 				
 				snapshot.references[refId] = instancePtr
 
@@ -941,8 +942,12 @@ def getDeserializerForCid(includesCode, cid):
 			def getObjectAt(self, snapshot):
 				stream = snapshot.rodata
 				tags = int.from_bytes(stream.read(4), 'little')
-				hsh = int.from_bytes(stream.read(4), 'little')
-				length = int.from_bytes(stream.read(8), 'little')
+				if snapshot.is64:
+					hsh = int.from_bytes(stream.read(4), 'little')
+					length = int.from_bytes(stream.read(8), 'little')
+				else:
+					length = int.from_bytes(stream.read(4), 'little')
+					hsh = int.from_bytes(stream.read(4), 'little')
 				return ''.join(chr(x) for x in stream.read(length // 2))
 
 		# Class ID: 82
@@ -970,7 +975,7 @@ def getDeserializerForCid(includesCode, cid):
 			def readFill(self, snapshot):
 				for refId in range(self.startIndex, self.stopIndex):
 					length = StreamUtils.readUnsigned(snapshot.stream)
-					StreamUtils.readBool(snapshot.stream) # Canonicalization plays no role in parsing
+					strPtr['isCanonical'] = StreamUtils.readBool(snapshot.stream)
 					strPtr = { 'cid': ClassId.ONE_BYTE_STRING, 'refId': snapshot.nextRefIndex }
 					strPtr['hash'] = StreamUtils.readInt(snapshot.stream, 32)
 					strPtr['length'] = length

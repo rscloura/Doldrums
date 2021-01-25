@@ -9,10 +9,10 @@ hashSize = 32
 
 kMaxObjectAlignment = 16
 
+kWordSize = 8
+kWordSizeLog2 = 3
 kObjectAlignment = 16
 kObjectAlignmentLog2 = 4
-kWordSizeLog2 = 3
-kWordSize = 8
 
 kTypedDataCidRemainderInternal = 0
 kTypedDataCidRemainderView = 1
@@ -34,6 +34,11 @@ kNativeFunction = 2
 
 kNullabilityBitSize = 2
 kNullabilityBitMask = 3
+
+kBitsPerByte = 8
+kNumBytesPerRead32 = 4 # sizeof(uint32_t)
+kNumRead32PerWord = int(8 / kNumBytesPerRead32) # 8 = sizeof(uword)
+kNumBitsPerRead32 = kNumBytesPerRead32 * kBitsPerByte
 
 kAppAOTSymbols = [
     '_kDartVmSnapshotData',

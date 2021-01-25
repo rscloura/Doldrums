@@ -71,7 +71,7 @@ class StreamUtils:
 
 	def readWordWith32BitReads(stream):
 		value = 0
-		for j in range(2):
+		for j in range(Constants.kNumRead32PerWord):
 			partialValue = StreamUtils.readUnsigned(stream, 32)
 			value |= partialValue << (j * 32)
 		return value

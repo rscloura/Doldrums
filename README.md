@@ -18,7 +18,7 @@ pip3 install pyelftools
 
 To use, simply run the following command, substituting `libapp.so` for the appropriate binary, and `output` for the desired output file.
 ```
-python3 main.py libapp.so output
+python3 src/main.py path-to-libapp.so path-to-output-file
 ```
 
 The expected output is a dump of all classes, in the following format:
