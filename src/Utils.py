@@ -7,7 +7,7 @@ class NumericUtils:
 		return n - n % m
 
 	def roundUp(n, m):
-		return n + m - n % m
+		return (n - 1) + m - (n - 1) % m
 
 class StreamUtils:
 	kDataBitsPerByte = 7

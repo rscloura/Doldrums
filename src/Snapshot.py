@@ -65,11 +65,20 @@ class Snapshot:
 		self.previousTextOffset = 0
 		if 'x64-sysv' in self.features:
 			self.arch = 'X64'
+		elif 'arm-eabi' in self.features:
+			self.arch = 'ARM'
+		elif 'arm64-sysv' in self.features:
+			self.arch = 'ARM64'  
+		else:
+			raise Exception('Unknown architecture')
+		self.setConstants(self.arch)
+
+	def setConstants(self, arch):
+		if self.arch == 'X64':
 			self.is64 = True
 			Constants.kMonomorphicEntryOffsetAOT = 8
 			Constants.kPolymorphicEntryOffsetAOT = 22
-		elif 'arm-eabi' in self.features:
-			self.arch = 'ARM'
+		elif self.arch == 'ARM':
 			self.is64 = False
 			Constants.kWordSize = 4
 			Constants.kWordSizeLog2 = 2
@@ -78,8 +87,7 @@ class Snapshot:
 			Constants.kMonomorphicEntryOffsetAOT = 0
 			Constants.kPolymorphicEntryOffsetAOT = 12
 			Constants.kNumRead32PerWord = int(4 / Constants.kNumBytesPerRead32)
-		elif 'arm64-sysv' in self.features:
-			self.arch = 'ARM64'
+		elif self.arch == 'ARM64':
 			self.is64 = True
 			Constants.kMonomorphicEntryOffsetAOT = 8
 			Constants.kPolymorphicEntryOffsetAOT = 20
