@@ -5,7 +5,7 @@
 
 Doldrums is a reverse engineering tool for Flutter apps targetting Android. Concretely, it is a parser and information extractor for the Flutter/Dart Android binary, conventionally named `libapp.so`, for all Dart version 2.10 releases. When run, it outputs a full dump of all classes present in the isolate snapshot.
 
-The tool is currently in **early beta**, and missing some deserialization routines and class information. It is likely that it won't work out-of-the-box.
+The tool is currently in **beta**, and missing some deserialization routines and class information. If it does not work out-of-the-box, please let me know.
 
 ## Dependencies
 
