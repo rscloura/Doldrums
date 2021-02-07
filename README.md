@@ -43,3 +43,7 @@ For a detailed write-up on the format, please check my [blog post](https://rlour
 ## Related works
 
 [darter](https://github.com/mildsunrise/darter) is a fully implemented and fully tested parser for Dart version 2.5 releases.
+
+***
+
+Logo by [Luis Fonseca](https://www.linkedin.com/in/luis-pedro-h-fonseca-4776a024/).
