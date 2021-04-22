@@ -1,5 +1,5 @@
-from ClassId import ClassId
-import Constants
+from v2_10.ClassId import ClassId
+import v2_10.Constants as Constants
 
 def elementSizeInBytes(cid):
 	return elementSize(elementType(cid))

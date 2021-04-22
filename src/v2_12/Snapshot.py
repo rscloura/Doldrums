@@ -1,11 +1,12 @@
 from io import BytesIO
+import logging
 
-import Cluster
-import Constants
+from . import Cluster
+from . import Constants
 
-from ClassId import ClassId
-from Kind import Kind
-from Utils import *
+from v2_12.ClassId import ClassId
+from v2_12.Kind import Kind
+from v2_12.Utils import *
 
 class Snapshot:
 	# snapshot = byte array of VM snapshot
@@ -16,6 +17,10 @@ class Snapshot:
 	# features = string array of features
  
 	def __init__(self, data, dataOffset, instructions, instructionsOffset, base=None):
+		if base is None:
+			logging.info('Parsing VM snapshot')
+		else:
+			logging.info('Parsing isolate snapshot')
 		# Initialize basic fields
 		self.stream = BytesIO(data)
 		self.classes = { } # A dictionary from an ID (see ClassDeserializer) to a deserialized class object
@@ -33,22 +38,29 @@ class Snapshot:
 		else:
 			self.addBaseObjects()
 		# Alloc stage
-		self.clusters = [ self.readClusterAlloc() for _ in range(self.numClusters) ]
+		self.canonicalClusters = [ self.readClusterAlloc(True) for _ in range(self.numCanonicalClusters) ]
+		self.clusters = [ self.readClusterAlloc(False) for _ in range(self.numClusters) ]
 		# Fill stage
+		for cluster in self.canonicalClusters:
+			cluster.readFill(self, True)
 		for cluster in self.clusters:
-			cluster.readFill(self)
+			cluster.readFill(self, False)
+
+		logging.info('Reading roots')
 		self.readRoots()
 
 	def parseHeader(self):
+		logging.info('Parsing header')
 		self.magic = int.from_bytes(self.stream.read(Constants.kMagicSize), 'little')
 		self.size = int.from_bytes(self.stream.read(Constants.kLengthSize), 'little')
 		self.kind = Kind(int.from_bytes(self.stream.read(Constants.kKindSize), 'little'))
 		self.hash = self.stream.read(Constants.hashSize).decode('UTF-8')
-		if (self.hash != '8ee4ef7a67df9845fba331734198a953'):
+		if (self.hash != '5b97292b25f0a715613b7a28e0734f77'):
 			raise Exception('Unsupported Dart version: ' + self.hash)
 		self.features = list(map(lambda x: x.decode('UTF-8'), StreamUtils.readString(self.stream).split(b'\x20')))
 		self.numBaseObjects = StreamUtils.readUnsigned(self.stream)
 		self.numObjects = StreamUtils.readUnsigned(self.stream)
+		self.numCanonicalClusters = StreamUtils.readUnsigned(self.stream)
 		self.numClusters = StreamUtils.readUnsigned(self.stream)
 		self.fieldTableLength = StreamUtils.readUnsigned(self.stream)
 
@@ -110,17 +122,11 @@ class Snapshot:
 			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'ExtractorParameterTypes' },
 			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'ExtractorParameterNames' },
 			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'EmptyContextScope' },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'EmptyObjetPool' },
+			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'EmptyCompressedStackmaps' },
 			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'EmptyDescriptors' },
 			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'EmptyVarDescriptors' },
 			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'EmptyExceptionHandlers' },
-			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'ImplicitGetterBytecode' },
-			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'ImplicitSetterBytecode' },
-			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'ImplicitStaticGetterBytecode' },
-			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'MethodExtractorBytecode' },
-			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'InvokeClosureBytecode' },
-			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'InvokeFieldBytecode' },
-			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'NsmDispatcherBytecode' },
-			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'DynamicInvocationForwarderBytecode' },
 			*({ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'CachedArgsDescriptors' } for _ in range(Constants.kCachedDescriptorCount)),
 			*({ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'CachedICDataArrays' } for _ in range(Constants.kCachedICDataArrayCount)),
 			{ 'cid': ClassId.TYPE, 'isBase': True, 'name': 'CachedArray' },
@@ -143,10 +149,10 @@ class Snapshot:
 		self.references.append(obj)
 		self.nextRefIndex += 1
 
-	def readClusterAlloc(self):
+	def readClusterAlloc(self, isCanonical):
 		cid = StreamUtils.readCid(self.stream)
 		deserializer = Cluster.getDeserializerForCid(self.includesCode, cid)
-		deserializer.readAlloc(self)
+		deserializer.readAlloc(self, isCanonical)
 		return deserializer
 
 	# Getter of the snapshot's header

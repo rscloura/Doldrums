@@ -1,5 +1,5 @@
 #FIXME: needs to be implemented decently from scratch
-from ClassId import ClassId
+from v2_10.ClassId import ClassId
 
 spacing = '    '
 
