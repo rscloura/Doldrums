@@ -16,9 +16,9 @@ pip3 install pyelftools
 
 ## Usage
 
-To use, simply run the following command, substituting `libapp.so` for the appropriate binary, and `output` for the desired output file.
+To use, simply run the following command, substituting `libapp.so` for the appropriate binary, and `output` for the desired output file. Note that the verbose option only works for Dart snapshot v2.12.
 ```
-python3 src/main.py libapp.so output
+python3 src/main.py [-v] libapp.so output
 ```
 
 The expected output is a dump of all classes, in the following format:
@@ -43,6 +43,13 @@ For a detailed write-up on the format, please check my [blog post](https://rlour
 ## Related works
 
 [darter](https://github.com/mildsunrise/darter) is a fully implemented and fully tested parser for Dart version 2.5 releases.
+
+## Contribute
+
+If you'd like to help the project, consider making a pull request,  or donating to
+* ADA: DdzFFzCqrhsgHAVMtnep9Uq9iF61oxZ31LWVG3izmT8BH54Jz7C2gUBFcy6VnCkrbVNqrkevQ4wSwK7dfh7YrUfvSd5toKdE9tzZrcaB
+* BTC: 33piC5kfTdqFyQ5ionmuJkTDJXsFYdzGdS
+* ETH: 0x2bF670503C28B551C80191aeE9F7ACC96e101D9B
 
 ***
 
