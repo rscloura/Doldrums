@@ -5,15 +5,15 @@ spacing = '    '
 
 class DartClass():
 	def __init__(self, snapshot, clazz):
-		self.name = snapshot.references[clazz['name']]['data']
-		self.superType = DartType(snapshot, snapshot.references[clazz['superType']])
-		self.typeParameters = list(map(lambda i: DartType(snapshot, snapshot.references[i]), snapshot.references[clazz['typeParameters']]['types']) if clazz['typeParameters'] != 1 else [])
-		self.interfaces = list(map(lambda i: DartType(snapshot, snapshot.references[i]), snapshot.references[clazz['interfaces']]['data']))
-		self.functions = list(map(lambda f: DartFunction(snapshot, snapshot.references[f]), snapshot.references[clazz['functions']]['data']))
-		self.fields = list(map(lambda i: DartField(snapshot, snapshot.references[i]), snapshot.references[clazz['fields']]['data']))
+		self.name = DartString(snapshot, clazz['name'])
+		self.superType = DartType(snapshot, clazz['superType'])
+		self.typeParameters = list(map(lambda i: DartType(snapshot, i), DartType(snapshot, clazz['typeParameters']).types))
+		self.interfaces = list(map(lambda i: DartType(snapshot, i), DartArray(snapshot, clazz['interfaces']).data))
+		self.functions = list(map(lambda f: DartFunction(snapshot, f), DartArray(snapshot, clazz['functions']).data))
+		self.fields = list(map(lambda i: DartField(snapshot, i), DartArray(snapshot, clazz['fields']).data))
 
 	def __str__(self):
-		s = 'class ' + self.name
+		s = 'class ' + str(self.name)
 		if self.typeParameters != []:
 			s += '<'
 			s += ', '.join(list(map(lambda i: str(i), self.typeParameters)))
@@ -34,10 +34,11 @@ class DartClass():
 		return s.strip() + '\n}'
 
 class DartFunction():
-	def __init__(self, snapshot, function):
+	def __init__(self, snapshot, refId):
+		function = snapshot.references[refId]
 		self.name = snapshot.references[function['name']]['data']
-		self.resultType = DartType(snapshot, snapshot.references[function['resultType']]).name
-		self.typeParameters = list(map(lambda i: DartType(snapshot, snapshot.references[i]), snapshot.references[function['parameterTypes']]['data']))
+		self.resultType = DartType(snapshot, DartType(snapshot, function['signature']).resultType).name
+		self.typeParameters = list(map(lambda i: DartType(snapshot, i), DartArray(snapshot, DartType(snapshot, function['signature']).parameterTypes).data))
 		self.codeOffset = snapshot.instructionsOffset + snapshot.references[function['code']]['entryPoint']
 
 	def __str__(self):
@@ -51,10 +52,14 @@ class DartFunction():
 		return s
 
 class DartType():
-	def __init__(self, snapshot, typee):
+	def __init__(self, snapshot, refId):
+		typee = snapshot.references[refId]
 		if typee['cid'] is ClassId.TYPE:
 			if typee['isBase']:
 				self.name = typee['name']
+				self.types = []
+				self.resultType = 1
+				self.parameterTypes = 1
 			else:
 				self.name = snapshot.references[snapshot.classes[snapshot.references[typee['typeClassId']]['value']]['name']]['data']
 		elif typee['cid'] is ClassId.TYPE_PARAMETER:
@@ -62,14 +67,49 @@ class DartType():
 				self.name = typee['name']
 			else:
 				self.name = snapshot.references[typee['name']]['data']
+			try:
+				self.types = typee['types']
+			except:
+				self.types = []
+		elif typee['cid'] is ClassId.FUNCTION_TYPE:
+			if 'isBase' in typee.keys() and typee['isBase']:
+				self.name = typee['name']
+				self.resultType = typee['name']
+				self.types = []
+			else:
+				self.name = "FuncType"
+				self.resultType = typee['resultType']
+				self.parameterTypes = typee['parameterTypes']
+		elif typee['cid'] is ClassId.TYPE_ARGUMENTS:
+			if 'isBase' in typee.keys() and typee['isBase']:
+				self.name = typee['name']
+				self.types = []
+			else:
+				self.name = "TypeArgs"
+				self.types = typee['types']
 
 	def __str__(self):
 		return self.name
 
 class DartField():
-	def __init__(self, snapshot, field):
-		self.name = snapshot.references[field['name']]['data']
-		self.type = DartType(snapshot, snapshot.references[field['type']])
+	def __init__(self, snapshot, refId):
+		field = snapshot.references[refId]
+		self.name = DartString(snapshot, field['name']).data
+		self.type = DartType(snapshot, field['type'])
 
 	def __str__(self):
 		return str(self.type) + ' ' + self.name
+
+class DartString():
+	def __init__(self, snapshot, refId):
+		self.data = snapshot.references[refId]['data']
+
+	def __str__(self):
+		return self.data
+
+class DartArray():
+	def __init__(self, snapshot, refId):
+		try:
+			self.data = snapshot.references[refId]['data']
+		except:
+			self.data = []

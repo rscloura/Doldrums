@@ -49,7 +49,6 @@ def loadLibraries(blob):
     Snapshot = getattr(snapshotModule, 'Snapshot')
     global DartClass
     DartClass = getattr(resolverModule, 'DartClass')
-    #ClassId = getattr(classIdModule, 'Snapshot')
 
 def dump(snapshot, output):
     f = open(output, 'w')
