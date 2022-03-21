@@ -34,18 +34,29 @@ def loadLibraries(blob):
     stream = BytesIO(blob)
     stream.seek(20)
     version = stream.read(32).decode('UTF-8')
+    
+    SUPPORTED_SNAPSHOT = {
+        "v2_10": "8ee4ef7a67df9845fba331734198a953",
+        "v2_12": "5b97292b25f0a715613b7a28e0734f77"
+    }
+
+    WIP_SNAPSHOT = {
+        "v2_13": "e4a09dbf2bb120fe4674e0576617a0dc"
+    }
+
+    for key,value in SUPPORTED_SNAPSHOT.items():
+        if version in key:
+            snapshotModule = importlib.import_module('{}.Snapshot'.format(key))
+            resolverModule = importlib.import_module('{}.Resolver'.format(key))
+            classIdModule = importlib.import_module('{}.ClassId'.format(key))
+            
+    for key,value in WIP_SNAPSHOT.items():
+        raise Exception('Still Work in Progress for Dart SDK ' + key)
+    
+    if version not in SUPPORTED_SNAPSHOT.values() and version not in WIP_SNAPSHOT.values():
+        raise Exception('Unsupported Dart SDK Version: ' + version)
+    
     global Snapshot
-    if version == '8ee4ef7a67df9845fba331734198a953':
-        snapshotModule = importlib.import_module('v2_10.Snapshot')
-        resolverModule = importlib.import_module('v2_10.Resolver')
-        classIdModule = importlib.import_module('v2_10.ClassId')
-    elif version == '5b97292b25f0a715613b7a28e0734f77':
-        snapshotModule = importlib.import_module('v2_12.Snapshot')
-        resolverModule = importlib.import_module('v2_12.Resolver')
-        classIdModule = importlib.import_module('v2_12.ClassId')
-    else:
-        raise Exception('Unsupported Dart version: ' + version)
- 
     Snapshot = getattr(snapshotModule, 'Snapshot')
     global DartClass
     DartClass = getattr(resolverModule, 'DartClass')
