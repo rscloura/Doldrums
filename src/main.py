@@ -45,7 +45,7 @@ def loadLibraries(blob):
     }
 
     for key,value in SUPPORTED_SNAPSHOT.items():
-        if version in key:
+        if version in value:
             snapshotModule = importlib.import_module('{}.Snapshot'.format(key))
             resolverModule = importlib.import_module('{}.Resolver'.format(key))
             classIdModule = importlib.import_module('{}.ClassId'.format(key))
